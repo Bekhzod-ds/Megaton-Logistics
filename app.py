@@ -1,93 +1,125 @@
 import os
 import json
-import base64
 import tempfile
 import requests
+import base64
 from flask import Flask, request, jsonify
-from google.oauth2 import service_account
+from datetime import datetime
+
 from google_drive import DriveHelper
 from google_sheets import SheetsHelper
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-SHEET_ID = os.environ.get("SHEET_ID")
-GSERVICE_JSON_B64 = os.environ.get("GSERVICE_JSON_B64")
-DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID")
+# ==== ENV VARS ====
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # required
+SHEET_ID = os.environ.get("SHEET_ID")    # required
+GSERVICE_JSON_B64 = os.environ.get("GSERVICE_JSON_B64")  # required
+DRIVE_FOLDER_ID = os.environ.get("DRIVE_FOLDER_ID")  # optional
 PORT = int(os.environ.get("PORT", 5000))
 
-if not BOT_TOKEN or not SHEET_ID or not GSERVICE_JSON_B64 or not DRIVE_FOLDER_ID:
-    raise RuntimeError("BOT_TOKEN, SHEET_ID, GSERVICE_JSON_B64, DRIVE_FOLDER_ID are required")
+if not BOT_TOKEN or not SHEET_ID or not GSERVICE_JSON_B64:
+    raise RuntimeError("BOT_TOKEN, SHEET_ID and GSERVICE_JSON_B64 env vars are required")
 
-# Decode service account JSON and create credentials
-service_json_dict = json.loads(base64.b64decode(GSERVICE_JSON_B64).decode("utf-8"))
-credentials = service_account.Credentials.from_service_account_info(service_json_dict)
+# decode service account JSON
+service_json = json.loads(base64.b64decode(GSERVICE_JSON_B64).decode("utf-8"))
 
 app = Flask(__name__)
 
-drive = DriveHelper(credentials, folder_id=DRIVE_FOLDER_ID)
-sheets = SheetsHelper(credentials, sheet_id=SHEET_ID)
+drive = DriveHelper(service_json, folder_id=DRIVE_FOLDER_ID)
+sheets = SheetsHelper(service_json, sheet_id=SHEET_ID)
 
-# Track conversation state
-user_states = {}  # {chat_id: {"step": "awaiting_id", "row_id": None}}
+# Telegram URLs
+TELEGRAM_FILE_URL = "https://api.telegram.org/file/bot{token}/{file_path}"
+TELEGRAM_GETFILE_URL = "https://api.telegram.org/bot{token}/getFile"
 
 def send_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": text})
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": text
+    })
+
+def download_telegram_file(file_id):
+    r = requests.get(TELEGRAM_GETFILE_URL.format(token=BOT_TOKEN), params={"file_id": file_id})
+    r.raise_for_status()
+    data = r.json()
+    if not data.get("ok"):
+        raise RuntimeError("getFile failed: " + str(data))
+    file_path = data["result"]["file_path"]
+
+    url = TELEGRAM_FILE_URL.format(token=BOT_TOKEN, file_path=file_path)
+    r2 = requests.get(url, stream=True)
+    r2.raise_for_status()
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    with open(tmp.name, "wb") as f:
+        for chunk in r2.iter_content(chunk_size=8192):
+            f.write(chunk)
+    return tmp.name
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json()
+    update = request.get_json()
 
-    if "message" not in data:
-        return jsonify({"status": "no_message"}), 200
+    if not update:
+        return jsonify({"status": "no json"}), 400
 
-    chat_id = data["message"]["chat"]["id"]
+    message = update.get("message") or update.get("edited_message")
+    if not message:
+        return jsonify({"status": "no message"}), 200
 
-    # Handle /start
-    if "text" in data["message"] and data["message"]["text"] == "/start":
-        user_states[chat_id] = {"step": "awaiting_id", "row_id": None}
-        send_message(chat_id, "Salom! Iltimos, qaysi ID uchun skrinshot yuklamoqchisiz, ID raqamini yuboring.")
-        return jsonify({"status": "awaiting_id"}), 200
+    chat_id = message.get("chat", {}).get("id")
 
-    # Awaiting ID
-    if chat_id in user_states and user_states[chat_id]["step"] == "awaiting_id":
-        if "text" in data["message"]:
-            row_id = data["message"]["text"].strip()
-            user_states[chat_id]["row_id"] = row_id
-            user_states[chat_id]["step"] = "awaiting_photo"
-            send_message(chat_id, f"Rahmat! Endi ID {row_id} uchun skrinshot rasmini yuboring.")
-            return jsonify({"status": "awaiting_photo"}), 200
+    # handle /start
+    if "text" in message and message["text"].strip() == "/start":
+        send_message(chat_id, "Salom! 📸 Iltimos, ID raqamingizni yozgan holda rasm yuboring.\n\n"
+                              "Masalan: \n1️⃣ Rasm tanlang\n2️⃣ Caption qismida ID kiriting\n3️⃣ Yuboring ✅")
+        return jsonify({"status": "start sent"}), 200
 
-    # Awaiting photo
-    if chat_id in user_states and user_states[chat_id]["step"] == "awaiting_photo":
-        if "photo" in data["message"]:
-            file_id = data["message"]["photo"][-1]["file_id"]
+    # only handle images with caption
+    caption = message.get("caption", "").strip()
+    if not caption:
+        send_message(chat_id, "⚠️ Iltimos, rasmni yuborishda caption (izoh) qismiga ID raqamingizni yozing.")
+        return jsonify({"status": "no caption"}), 200
 
-            # Get file path
-            file_info = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getFile?file_id={file_id}").json()
-            file_path = file_info["result"]["file_path"]
+    if "photo" in message:
+        file_id = message["photo"][-1]["file_id"]
+    elif "document" in message and message["document"]["mime_type"].startswith("image"):
+        file_id = message["document"]["file_id"]
+    else:
+        return jsonify({"status": "ignored"}), 200
 
-            # Download
-            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-            tmp_file = tempfile.NamedTemporaryFile(delete=False)
-            tmp_file.write(requests.get(file_url).content)
-            tmp_file.close()
+    try:
+        # download
+        local_path = download_telegram_file(file_id)
+        filename = os.path.basename(local_path)
 
-            # Upload to Drive
-            uploaded_file = drive.upload_file(tmp_file.name, f"{user_states[chat_id]['row_id']}_screenshot.jpg")
-            drive.make_file_public(uploaded_file["id"])
-            file_link = uploaded_file["webViewLink"]
+        # upload to drive
+        uploaded = drive.upload_file(local_path, filename)
+        drive.make_file_public(uploaded["id"])
+        link = uploaded.get("webViewLink") or uploaded.get("webContentLink")
 
-            # Update Sheets
-            sheets.update_screenshot_link(user_states[chat_id]["row_id"], file_link)
+        # find row in Google Sheets by "A" column (assumed header is "ID")
+        row_num = sheets.find_row_by_column_value("ID", caption)
+        if not row_num:
+            send_message(chat_id, f"❌ ID {caption} topilmadi. Iltimos, tekshirib qayta yuboring.")
+            return jsonify({"status": "id not found"}), 200
 
-            send_message(chat_id, f"Skrinshot yuklandi va Google Sheets-ga qo‘shildi!\nKo‘rish: {file_link}")
+        sheets.update_cell_by_header(row_num, "Skrinshot", link)
+        send_message(chat_id, f"✅ ID {caption} uchun rasm muvaffaqiyatli yuklandi!")
+        os.remove(local_path)
 
-            # Reset state
-            del user_states[chat_id]
-            return jsonify({"status": "photo_uploaded"}), 200
+        return jsonify({"status": "ok"}), 200
 
-    send_message(chat_id, "Iltimos, /start buyrug‘i bilan boshlang.")
-    return jsonify({"status": "unknown"}), 200
+    except Exception as e:
+        send_message(chat_id, f"❌ Xatolik: {str(e)}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route("/set_webhook", methods=["GET"])
+def set_webhook():
+    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+    if not WEBHOOK_URL:
+        return "WEBHOOK_URL env var kerak", 400
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
+    r = requests.post(url, json={"url": WEBHOOK_URL})
+    return jsonify(r.json())
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
