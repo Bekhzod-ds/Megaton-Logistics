@@ -1,34 +1,35 @@
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google.oauth2 import service_account
+from google.oauth2.service_account import Credentials
 
 class DriveHelper:
     def __init__(self, service_json, folder_id=None):
-        # Authenticate with Service Account JSON
-        creds = service_account.Credentials.from_service_account_info(service_json)
+        scopes = ["https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(service_json, scopes=scopes)
         self.service = build("drive", "v3", credentials=creds)
-        self.folder_id = folder_id  # folder in shared drive (optional)
+        self.folder_id = folder_id
 
-    def upload_file(self, local_path, filename):
+    def upload_file(self, file_path, filename):
+        """Uploads a file to Google Drive (Shared Drive compatible)."""
         file_metadata = {
             "name": filename,
-            "parents": [self.folder_id] if self.folder_id else None
         }
+        if self.folder_id:
+            file_metadata["parents"] = [self.folder_id]
 
-        # if uploading to shared drive, must specify supportsAllDrives=True
-        media = MediaFileUpload(local_path, resumable=True)
-        uploaded = self.service.files().create(
+        media = MediaFileUpload(file_path, resumable=True)
+        file = self.service.files().create(
             body=file_metadata,
             media_body=media,
-            fields="id, name, webViewLink, webContentLink",
+            fields="id,name,webViewLink,webContentLink",
             supportsAllDrives=True
         ).execute()
-        return uploaded
+        return file
 
     def make_file_public(self, file_id):
-        # allow "anyone with the link" to view
+        """Makes a file public so anyone with the link can view it."""
         self.service.permissions().create(
             fileId=file_id,
-            body={"role": "reader", "type": "anyone"},
+            body={"type": "anyone", "role": "reader"},
             supportsAllDrives=True
         ).execute()
