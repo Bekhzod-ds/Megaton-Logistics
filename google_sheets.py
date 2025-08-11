@@ -1,63 +1,59 @@
 from googleapiclient.discovery import build
-from google.oauth2 import service_account
+from google.oauth2.service_account import Credentials
 
 class SheetsHelper:
-    def __init__(self, service_json, spreadsheet_id):
-        creds = service_account.Credentials.from_service_account_info(service_json)
+    def __init__(self, service_json, sheet_id):
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(service_json, scopes=scopes)
         self.service = build("sheets", "v4", credentials=creds)
-        self.spreadsheet_id = spreadsheet_id
+        self.sheet_id = sheet_id
 
-    def find_row_by_id(self, sheet_name, search_value, id_column_name):
-        """
-        Finds the row index where the given ID is located.
-        Returns the row number (1-based) or None if not found.
-        """
+    def get_headers(self):
+        """Reads the first row of the sheet as headers."""
         result = self.service.spreadsheets().values().get(
-            spreadsheetId=self.spreadsheet_id,
-            range=f"{sheet_name}!A1:Z"
+            spreadsheetId=self.sheet_id,
+            range="A1:Z1"
         ).execute()
+        return result.get("values", [[]])[0]
 
-        values = result.get("values", [])
-        if not values:
+    def find_row_by_column_value(self, column_name, value):
+        """Finds the first row number where column_name matches value."""
+        headers = self.get_headers()
+        if column_name not in headers:
             return None
-
-        # Find the column index for the given header name
-        header = values[0]
-        try:
-            col_index = header.index(id_column_name)
-        except ValueError:
-            raise Exception(f"Column '{id_column_name}' not found in sheet.")
-
-        for i, row in enumerate(values[1:], start=2):  # start=2 because row 1 is headers
-            if len(row) > col_index and row[col_index] == str(search_value):
-                return i
-
+        col_index = headers.index(column_name)
+        range_ = "A2:Z"
+        result = self.service.spreadsheets().values().get(
+            spreadsheetId=self.sheet_id,
+            range=range_
+        ).execute()
+        rows = result.get("values", [])
+        for idx, row in enumerate(rows, start=2):
+            if len(row) > col_index and row[col_index] == value:
+                return idx
         return None
 
-    def update_cell(self, sheet_name, row, column_name, new_value):
-        """
-        Updates the cell in the given row and column header with the new value.
-        """
-        # Get headers to find column index
-        result = self.service.spreadsheets().values().get(
-            spreadsheetId=self.spreadsheet_id,
-            range=f"{sheet_name}!1:1"
-        ).execute()
-
-        headers = result.get("values", [[]])[0]
-        try:
-            col_index = headers.index(column_name)
-        except ValueError:
-            raise Exception(f"Column '{column_name}' not found.")
-
-        # Convert col_index (0-based) to column letter
+    def update_cell_by_header(self, row_number, column_name, new_value):
+        """Updates a cell using its column header."""
+        headers = self.get_headers()
+        if column_name not in headers:
+            return
+        col_index = headers.index(column_name)
         col_letter = chr(ord('A') + col_index)
-        cell_range = f"{sheet_name}!{col_letter}{row}"
-
-        # Update the cell
+        cell_range = f"{col_letter}{row_number}"
         self.service.spreadsheets().values().update(
-            spreadsheetId=self.spreadsheet_id,
+            spreadsheetId=self.sheet_id,
             range=cell_range,
             valueInputOption="RAW",
             body={"values": [[new_value]]}
+        ).execute()
+
+    def append_row(self, row_values):
+        """Appends a row to the sheet."""
+        self.service.spreadsheets().values().append(
+            spreadsheetId=self.sheet_id,
+            range="A1",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [row_values]}
         ).execute()
