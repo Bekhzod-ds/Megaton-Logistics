@@ -5,7 +5,11 @@ import os
 from datetime import datetime
 import logging
 import re
-from typing import List, Dict, Optional, Tuple 
+from typing import List, Dict, Optional, Tuple
+import os
+import base64
+import json
+from google.oauth2.service_account import Credentials
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -21,8 +25,13 @@ class GoogleSheetsHelper:
                 "https://www.googleapis.com/auth/drive"
             ]
             
-            # Get credentials from environment variable or file
-            creds_file = os.getenv("GOOGLE_CREDS_FILE", "credentials.json")
+            credentials_base64 = os.environ.get("CREDENTIALS_BASE64")
+            credentials_json = base64.b64decode(credentials_base64).decode('utf-8')
+            creds_dict = json.loads(credentials_json)
+        
+            self.credentials = Credentials.from_service_account_info(creds_dict)
+            self.scopes = ['https://www.googleapis.com/auth/spreadsheets']
+            
             if os.path.exists(creds_file):
                 creds = Credentials.from_service_account_file(creds_file, scopes=scope)
                 logger.info(f"Using credentials from file: {creds_file}")
