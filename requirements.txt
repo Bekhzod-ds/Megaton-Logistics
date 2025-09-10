@@ -1,7 +1,9 @@
+python-telegram-bot==20.7
+gspread==5.11.0
+google-auth-oauthlib==1.1.0
+google-auth==2.23.3
+python-dotenv==1.0.0
+openpyxl==3.1.2
+google-api-python-client==2.108.0
 Flask==2.3.3
-requests==2.31.0
-google-api-python-client==2.97.0
-google-auth==2.22.0
-google-auth-httplib2==0.1.0
-gspread==5.9.0
 gunicorn==21.2.0
