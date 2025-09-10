@@ -39,20 +39,17 @@ def home():
 def health():
     return "OK", 200
 
-if __name__ == '__main__':
-    logger.info("=== APPLICATION STARTING ===")
-    logger.info(f"PORT: {os.environ.get('PORT')}")
-    logger.info(f"All environment variables: {list(os.environ.keys())}")
-    
-    # Get port from Render environment variable
-    port = int(os.environ.get("PORT", 10000))
-    logger.info(f"Using port: {port}")
-    
-    # Start the bot in a background thread
-    bot_thread = threading.Thread(target=run_bot, name="TelegramBotThread")
-    bot_thread.daemon = True
-    bot_thread.start()
-    logger.info("Bot thread started. Starting Flask server...")
-    
-    # Start the Flask server
-    app.run(host='0.0.0.0', port=port)
+# === MOVE THE STARTUP CODE HERE ===
+# This will run when the module is imported by Gunicorn
+
+logger.info("=== APPLICATION STARTING ===")
+logger.info(f"PORT: {os.environ.get('PORT')}")
+
+# Start the bot in a background thread
+bot_thread = threading.Thread(target=run_bot, name="TelegramBotThread")
+bot_thread.daemon = True
+bot_thread.start()
+logger.info("Bot thread started!")
+
+# The Gunicorn server will handle the Flask app directly
+# We don't need app.run() anymore since Gunicorn manages the server
