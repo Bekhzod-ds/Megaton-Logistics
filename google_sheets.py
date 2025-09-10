@@ -5,11 +5,8 @@ import os
 from datetime import datetime
 import logging
 import re
-from typing import List, Dict, Optional, Tuple
-import os
 import base64
 import json
-from google.oauth2.service_account import Credentials
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -17,26 +14,26 @@ logger = logging.getLogger(__name__)
 
 class GoogleSheetsHelper:
     def __init__(self):
-        """Initialize Google Sheets connection using service account credentials."""
+        """Initialize Google Sheets connection using service account credentials from Base64 environment variable."""
         try:
             # Define the scope
             scope = [
                 "https://spreadsheets.google.com/feeds",
-                "https://www.googleapis.com/auth/drive"
+                "https://www.googleapis.com/auth/drive",
+                "https://www.googleapis.com/auth/spreadsheets"
             ]
             
+            # Get and decode Base64 credentials
             credentials_base64 = os.environ.get("CREDENTIALS_BASE64")
+            if not credentials_base64:
+                raise ValueError("CREDENTIALS_BASE64 environment variable not set")
+            
             credentials_json = base64.b64decode(credentials_base64).decode('utf-8')
             creds_dict = json.loads(credentials_json)
-        
-            self.credentials = Credentials.from_service_account_info(creds_dict)
-            self.scopes = ['https://www.googleapis.com/auth/spreadsheets']
             
-            if os.path.exists(creds_file):
-                creds = Credentials.from_service_account_file(creds_file, scopes=scope)
-                logger.info(f"Using credentials from file: {creds_file}")
-            else:
-                raise FileNotFoundError(f"Credentials file not found: {creds_file}")
+            # Create credentials from the decoded dictionary
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            logger.info("Using credentials from Base64 environment variable")
             
             # Authorize and open client
             self.client = gspread.authorize(creds)
@@ -62,15 +59,16 @@ class GoogleSheetsHelper:
             logger.error(f"Error initializing Google Sheets: {e}")
             raise
 
-    def extract_sheet_id(self, sheet_input):
-        """Extract just the sheet ID from a full URL or return the input if it's already an ID."""
-        # Pattern to match Google Sheets URL
+    def extract_sheet_id(self, sheet_input: str) -> str:
+        """Extract just the sheet ID from a full URL or use as-is if already an ID."""
+        # Pattern to match Google Sheets URL and extract ID
         url_pattern = r'https://docs\.google\.com/spreadsheets/d/([a-zA-Z0-9-_]+)'
-        match = re.search(url_pattern, sheet_input)
+        match = re.match(url_pattern, sheet_input)
+        
         if match:
             return match.group(1)
         return sheet_input
-
+        
     def convert_date_format(self, date_str):
         """Convert date from YYYY-MM-DD to DD.MM.YYYY format for Sheet 2 worksheet names."""
         try:
