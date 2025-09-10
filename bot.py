@@ -1173,14 +1173,24 @@ class TelegramBot:
 
 def main():
     """Start the bot."""
+    # ADD DEBUG LOGGING HERE
+    import logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+    
+    logger.info("=== BOT MAIN FUNCTION STARTING ===")
+    
     # Get bot token from environment variable
     bot_token = os.getenv("BOT_TOKEN")
+    logger.info(f"BOT_TOKEN exists: {bool(bot_token)}")
+    logger.info(f"BOT_TOKEN length: {len(bot_token) if bot_token else 0}")
+    
     if not bot_token:
+        logger.error("ERROR: BOT_TOKEN environment variable not set!")
         raise ValueError("BOT_TOKEN environment variable not set")
     
+    logger.info("Creating TelegramBot instance...")
     # Create and run bot
     bot = TelegramBot(bot_token)
+    logger.info("Starting bot polling...")
     bot.run()
-
-if __name__ == "__main__":
-    main()
