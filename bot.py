@@ -1167,19 +1167,9 @@ class TelegramBot:
             "/change buyrug'i orqali Yangi/Eski buyurtma tanlovini o'zgartirishingiz mumkin."
         )
 
-    async def run(self):
-        """Run the bot."""
-        import logging
-        logger = logging.getLogger(__name__)
-
-        logger.info("=== BOT RUN METHOD STARTING ===")
-        try:
-            logger.info("Starting polling...")
-            await self.application.run_polling()
-            logger.info("Polling has stopped gracefully.")
-        except Exception as e:
-            logger.error(f"Error while running bot: {e}", exc_info=True)
-            raise
+    def run(self):
+    """Run the bot."""
+    self.application.run_polling()
 
     async def main():
         """Start the bot."""
