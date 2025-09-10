@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 
 # Set up detailed logging
 logging.basicConfig(
@@ -25,6 +26,29 @@ def check_environment():
     
     return all_set
 
+async def run_bot_async():
+    """Run the bot using async."""
+    try:
+        logger.info("Importing bot module...")
+        from bot import TelegramBot
+        import os
+        
+        # Get bot token
+        bot_token = os.getenv("BOT_TOKEN")
+        logger.info(f"Creating bot instance with token length: {len(bot_token) if bot_token else 0}")
+        
+        # Create bot instance
+        bot = TelegramBot(bot_token)
+        logger.info("Starting async bot polling...")
+        
+        # Run the async polling
+        await bot.application.run_polling()
+        
+    except Exception as e:
+        logger.error(f"❌ FAILED TO START BOT: {e}")
+        logger.error("Full error:", exc_info=True)
+        raise
+
 if __name__ == "__main__":
     logger.info("=== STARTING TELEGRAM BOT ON RENDER ===")
     
@@ -33,25 +57,9 @@ if __name__ == "__main__":
         logger.error("Missing required environment variables! Bot cannot start.")
         exit(1)
     
-    # Import and run the bot
+    # Run the async bot
     try:
-        logger.info("Importing and starting bot...")
-        
-        # Import your bot components
-        from bot import TelegramBot
-        import os
-        
-        # Get bot token
-        bot_token = os.getenv("BOT_TOKEN")
-        logger.info(f"Creating bot instance with token length: {len(bot_token) if bot_token else 0}")
-        
-        # Create and run bot
-        bot = TelegramBot(bot_token)
-        logger.info("Starting bot polling...")
-        bot.run()
-        
+        asyncio.run(run_bot_async())
     except Exception as e:
-        logger.error(f"❌ FAILED TO START BOT: {e}")
-        logger.error("Full error:", exc_info=True)
-        # Exit with error code so Render can restart it
+        logger.error(f"Bot crashed: {e}")
         exit(1)
