@@ -1167,30 +1167,40 @@ class TelegramBot:
             "/change buyrug'i orqali Yangi/Eski buyurtma tanlovini o'zgartirishingiz mumkin."
         )
 
-    def run(self):
+    async def run(self):
         """Run the bot."""
-        self.application.run_polling()
+        import logging
+        logger = logging.getLogger(__name__)
 
-def main():
-    """Start the bot."""
-    # ADD DEBUG LOGGING HERE
-    import logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
-    
-    logger.info("=== BOT MAIN FUNCTION STARTING ===")
-    
-    # Get bot token from environment variable
-    bot_token = os.getenv("BOT_TOKEN")
-    logger.info(f"BOT_TOKEN exists: {bool(bot_token)}")
-    logger.info(f"BOT_TOKEN length: {len(bot_token) if bot_token else 0}")
-    
-    if not bot_token:
-        logger.error("ERROR: BOT_TOKEN environment variable not set!")
-        raise ValueError("BOT_TOKEN environment variable not set")
-    
-    logger.info("Creating TelegramBot instance...")
-    # Create and run bot
-    bot = TelegramBot(bot_token)
-    logger.info("Starting bot polling...")
-    bot.run()
+        logger.info("=== BOT RUN METHOD STARTING ===")
+        try:
+            logger.info("Starting polling...")
+            await self.application.run_polling()
+            logger.info("Polling has stopped gracefully.")
+        except Exception as e:
+            logger.error(f"Error while running bot: {e}", exc_info=True)
+            raise
+
+    async def main():
+        """Start the bot."""
+        import logging
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        logger = logging.getLogger(__name__)
+        
+        logger.info("=== BOT MAIN FUNCTION STARTING ===")
+        
+        # Get bot token from environment variable
+        bot_token = os.getenv("BOT_TOKEN")
+        logger.info(f"BOT_TOKEN exists: {bool(bot_token)}")
+        
+        if not bot_token:
+            logger.error("ERROR: BOT_TOKEN environment variable not set!")
+            raise ValueError("BOT_TOKEN environment variable not set")
+        
+        logger.info("Creating TelegramBot instance...")
+        # Create and run bot
+        bot = TelegramBot(bot_token)
+        logger.info("Starting bot polling...")
+        
+        # Use async polling if available, otherwise use regular
+        await bot.application.run_polling()
