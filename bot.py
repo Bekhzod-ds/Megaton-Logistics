@@ -1155,6 +1155,20 @@ class TelegramBot:
         
         return ConversationHandler.END
 
+    def set_webhook(self, webhook_url):
+        """Set webhook for the bot."""
+        try:
+            # Remove any existing webhook first
+            self.application.bot.delete_webhook()
+            
+            # Set new webhook
+            success = self.application.bot.set_webhook(webhook_url)
+            logger.info(f"Webhook set to: {webhook_url}")
+            return success
+        except Exception as e:
+            logger.error(f"Failed to set webhook: {e}")
+            return False
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send a message when the command /help is issued."""
         await update.message.reply_text(
