@@ -27,6 +27,12 @@ from bot import TelegramBot
 telegram_bot = TelegramBot(BOT_TOKEN)
 application = telegram_bot.application
 
+# Create a thread-safe way to run async functions
+def run_async(coro):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
 @app.route('/')
 def health_check():
     return jsonify({"status": "ok", "message": "Telegram Bot is running!"})
@@ -37,8 +43,8 @@ def webhook():
         # Process webhook update using YOUR existing bot handlers
         update = Update.de_json(request.get_json(), application.bot)
         
-        # Use create_task to handle async operations in sync context
-        application.create_task(application.process_update(update))
+        # Run the async process_update in a thread-safe way
+        run_async(application.process_update(update))
         
         return jsonify({"status": "ok"})
     except Exception as e:
@@ -54,10 +60,8 @@ def set_webhook():
         # Create the correct webhook URL by adding /webhook
         webhook_url = f"{WEBHOOK_URL}/webhook"
         
-        # Use run_until_complete for async method
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        success = loop.run_until_complete(application.bot.set_webhook(webhook_url))
+        # Set webhook
+        success = run_async(application.bot.set_webhook(webhook_url))
         
         return jsonify({
             "status": "success", 
@@ -70,9 +74,7 @@ def set_webhook():
 @app.route('/get_webhook_info', methods=['GET'])
 def get_webhook_info():
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        webhook_info = loop.run_until_complete(application.bot.get_webhook_info())
+        webhook_info = run_async(application.bot.get_webhook_info())
         return jsonify({
             "status": "success",
             "webhook_info": {
@@ -95,20 +97,16 @@ def initialize_bot():
             # Create the correct webhook URL by adding /webhook
             webhook_url = f"{WEBHOOK_URL}/webhook"
             
-            # Use run_until_complete for async method
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
             # Remove any existing webhook first
-            loop.run_until_complete(application.bot.delete_webhook())
+            run_async(application.bot.delete_webhook())
             
             # Set new webhook
-            loop.run_until_complete(application.bot.set_webhook(webhook_url))
+            run_async(application.bot.set_webhook(webhook_url))
             
             logger.info(f"Webhook set to: {webhook_url}")
             
             # Get webhook info to verify
-            webhook_info = loop.run_until_complete(application.bot.get_webhook_info())
+            webhook_info = run_async(application.bot.get_webhook_info())
             logger.info(f"Webhook info: {webhook_info.url}")
             
         else:
