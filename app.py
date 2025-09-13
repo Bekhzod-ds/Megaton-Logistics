@@ -36,11 +36,14 @@ def webhook():
     try:
         # Process webhook update using YOUR existing bot handlers
         update = Update.de_json(request.get_json(), application.bot)
-        application.process_update(update)
+        
+        # Use create_task to handle async operations in sync context
+        application.create_task(application.process_update(update))
+        
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error(f"Webhook error: {e}")
-        return jsonify({"status": "error"}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
