@@ -39,7 +39,8 @@ def set_webhook():
         import asyncio
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        success = loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
+        webhook_url = f"{WEBHOOK_URL}/webhook"
+        success = loop.run_until_complete(application.bot.set_webhook(webhook_url))
         
         return jsonify({"status": "success", "webhook_set": success, "url": WEBHOOK_URL})
     except Exception as e:
