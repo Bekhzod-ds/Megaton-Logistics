@@ -15,9 +15,7 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 
 # Handle WEBHOOK_URL gracefully - it might not be set initially
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
-if WEBHOOK_URL:
-    WEBHOOK_URL += '/webhook'
-else:
+if not WEBHOOK_URL:
     logger.warning("WEBHOOK_URL environment variable not set yet")
 
 # Import and initialize your existing TelegramBot class
