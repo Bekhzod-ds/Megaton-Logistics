@@ -11,27 +11,50 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize bot with your existing code
+# Initialize variables
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')  # Just the base URL, without /webhook
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
+application = None
 
 if not WEBHOOK_URL:
     logger.warning("WEBHOOK_URL environment variable not set yet")
 else:
     logger.info(f"WEBHOOK_URL: {WEBHOOK_URL}")
 
-# Import and initialize your existing TelegramBot class
-from bot import TelegramBot
-
-# Create your bot instance
-telegram_bot = TelegramBot(BOT_TOKEN)
-application = telegram_bot.application
-
-# Create a thread-safe way to run async functions
 def run_async(coro):
+    """Helper to run async functions in sync context"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+def initialize_application():
+    """Initialize the Telegram bot application"""
+    global application
+    try:
+        from bot import TelegramBot
+        logger.info("Initializing Telegram bot...")
+        
+        # Create your bot instance
+        telegram_bot = TelegramBot(BOT_TOKEN)
+        application = telegram_bot.application
+        
+        # Initialize the application properly
+        run_async(application.initialize())
+        logger.info("Telegram bot initialized successfully")
+        
+        return application
+    except Exception as e:
+        logger.error(f"Failed to initialize application: {e}")
+        raise
+
+@app.before_first_request
+def before_first_request():
+    """Initialize the application before first request"""
+    if application is None:
+        initialize_application()
 
 @app.route('/')
 def health_check():
@@ -40,10 +63,13 @@ def health_check():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        # Process webhook update using YOUR existing bot handlers
+        if application is None:
+            initialize_application()
+            
+        # Process webhook update
         update = Update.de_json(request.get_json(), application.bot)
         
-        # Run the async process_update in a thread-safe way
+        # Run the async process_update
         run_async(application.process_update(update))
         
         return jsonify({"status": "ok"})
@@ -54,10 +80,13 @@ def webhook():
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
     try:
+        if application is None:
+            initialize_application()
+            
         if not WEBHOOK_URL:
             return jsonify({"status": "error", "message": "WEBHOOK_URL not configured"}), 400
         
-        # Create the correct webhook URL by adding /webhook
+        # Create the correct webhook URL
         webhook_url = f"{WEBHOOK_URL}/webhook"
         
         # Set webhook
@@ -74,49 +103,33 @@ def set_webhook():
 @app.route('/get_webhook_info', methods=['GET'])
 def get_webhook_info():
     try:
+        if application is None:
+            initialize_application()
+            
         webhook_info = run_async(application.bot.get_webhook_info())
         return jsonify({
             "status": "success",
             "webhook_info": {
                 "url": webhook_info.url,
-                "has_custom_certificate": webhook_info.has_custom_certificate,
                 "pending_update_count": webhook_info.pending_update_count,
-                "last_error_date": webhook_info.last_error_date,
                 "last_error_message": webhook_info.last_error_message,
-                "max_connections": webhook_info.max_connections,
-                "allowed_updates": webhook_info.allowed_updates
             }
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-def initialize_bot():
-    """Initialize bot with webhook"""
-    try:
-        if WEBHOOK_URL:
-            # Create the correct webhook URL by adding /webhook
-            webhook_url = f"{WEBHOOK_URL}/webhook"
-            
-            # Remove any existing webhook first
-            run_async(application.bot.delete_webhook())
-            
-            # Set new webhook
-            run_async(application.bot.set_webhook(webhook_url))
-            
-            logger.info(f"Webhook set to: {webhook_url}")
-            
-            # Get webhook info to verify
-            webhook_info = run_async(application.bot.get_webhook_info())
-            logger.info(f"Webhook info: {webhook_info.url}")
-            
-        else:
-            logger.warning("Skipping webhook setup - WEBHOOK_URL not available")
-    except Exception as e:
-        logger.error(f"Failed to set webhook: {e}")
-
-# Initialize when app starts
-if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
-    initialize_bot()
+# Initialize on startup
+try:
+    if BOT_TOKEN and WEBHOOK_URL:
+        initialize_application()
+        
+        # Set webhook on startup
+        webhook_url = f"{WEBHOOK_URL}/webhook"
+        run_async(application.bot.set_webhook(webhook_url))
+        logger.info(f"Webhook set to: {webhook_url}")
+        
+except Exception as e:
+    logger.error(f"Startup initialization failed: {e}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
