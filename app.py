@@ -46,17 +46,6 @@ def set_webhook():
         return jsonify({"status": "success", "webhook_set": success, "url": WEBHOOK_URL})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-        
-@app.route('/set_webhook', methods=['GET'])
-def set_webhook():
-    try:
-        if not WEBHOOK_URL:
-            return jsonify({"status": "error", "message": "WEBHOOK_URL not configured"}), 400
-        
-        success = application.bot.set_webhook(WEBHOOK_URL)
-        return jsonify({"status": "success", "webhook_set": success, "url": WEBHOOK_URL})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
 
 def initialize_bot():
     """Initialize bot with webhook"""
