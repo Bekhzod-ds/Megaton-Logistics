@@ -31,20 +31,22 @@ application = telegram_bot.application
 def health_check():
     return jsonify({"status": "ok", "message": "Telegram Bot is running!"})
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
+@app.route('/set_webhook', methods=['GET'])
+def set_webhook():
     try:
-        # Process webhook update using YOUR existing bot handlers
-        update = Update.de_json(request.get_json(), application.bot)
+        if not WEBHOOK_URL:
+            return jsonify({"status": "error", "message": "WEBHOOK_URL not configured"}), 400
         
-        # Use create_task to handle async operations in sync context
-        application.create_task(application.process_update(update))
+        # Use run_until_complete for async method
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        success = loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
         
-        return jsonify({"status": "ok"})
+        return jsonify({"status": "success", "webhook_set": success, "url": WEBHOOK_URL})
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
+        
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
     try:
