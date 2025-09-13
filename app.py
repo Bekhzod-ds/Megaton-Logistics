@@ -12,14 +12,20 @@ app = Flask(__name__)
 
 # Initialize bot with your existing code
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL') + '/webhook'
+
+# Handle WEBHOOK_URL gracefully - it might not be set initially
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '')
+if WEBHOOK_URL:
+    WEBHOOK_URL += '/webhook'
+else:
+    logger.warning("WEBHOOK_URL environment variable not set yet")
 
 # Import and initialize your existing TelegramBot class
 from bot import TelegramBot
 
-# Create your bot instance (this will initialize with all your handlers)
+# Create your bot instance
 telegram_bot = TelegramBot(BOT_TOKEN)
-application = telegram_bot.application  # Get the application from your bot instance
+application = telegram_bot.application
 
 @app.route('/')
 def health_check():
@@ -39,19 +45,22 @@ def webhook():
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
     try:
-        webhook_url = f"{WEBHOOK_URL}"
-        success = application.bot.set_webhook(webhook_url)
-        return jsonify({"status": "success", "webhook_set": success, "url": webhook_url})
+        if not WEBHOOK_URL:
+            return jsonify({"status": "error", "message": "WEBHOOK_URL not configured"}), 400
+        
+        success = application.bot.set_webhook(WEBHOOK_URL)
+        return jsonify({"status": "success", "webhook_set": success, "url": WEBHOOK_URL})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 def initialize_bot():
     """Initialize bot with webhook"""
     try:
-        webhook_url = f"{WEBHOOK_URL}"
-        application.bot.set_webhook(webhook_url)
-        logger.info(f"Webhook set to: {webhook_url}")
-        logger.info("Bot initialized with all your existing handlers")
+        if WEBHOOK_URL:
+            application.bot.set_webhook(WEBHOOK_URL)
+            logger.info(f"Webhook set to: {WEBHOOK_URL}")
+        else:
+            logger.warning("Skipping webhook setup - WEBHOOK_URL not available")
     except Exception as e:
         logger.error(f"Failed to set webhook: {e}")
 
