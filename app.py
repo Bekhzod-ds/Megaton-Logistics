@@ -1,10 +1,8 @@
 import os
 import logging
 from flask import Flask, request, jsonify
-import telegram
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from google_sheets import GoogleSheetsHelper  # Keep your existing import
+from telegram import Update
+from telegram.ext import Application, ContextTypes
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -12,23 +10,16 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize bot
+# Initialize bot with your existing code
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL') + '/webhook'  # Render provides URL
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL') + '/webhook'
 
-# Initialize your bot application
-application = Application.builder().token(BOT_TOKEN).build()
+# Import and initialize your existing TelegramBot class
+from bot import TelegramBot
 
-# Add your existing handlers (simplified version)
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Hello! Bot is working with webhooks!')
-
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f'You said: {update.message.text}')
-
-# Add handlers
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+# Create your bot instance (this will initialize with all your handlers)
+telegram_bot = TelegramBot(BOT_TOKEN)
+application = telegram_bot.application  # Get the application from your bot instance
 
 @app.route('/')
 def health_check():
@@ -37,7 +28,7 @@ def health_check():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        # Process webhook update
+        # Process webhook update using YOUR existing bot handlers
         update = Update.de_json(request.get_json(), application.bot)
         application.process_update(update)
         return jsonify({"status": "ok"})
@@ -48,7 +39,6 @@ def webhook():
 @app.route('/set_webhook', methods=['GET'])
 def set_webhook():
     try:
-        # Set webhook URL
         webhook_url = f"{WEBHOOK_URL}"
         success = application.bot.set_webhook(webhook_url)
         return jsonify({"status": "success", "webhook_set": success, "url": webhook_url})
@@ -58,15 +48,15 @@ def set_webhook():
 def initialize_bot():
     """Initialize bot with webhook"""
     try:
-        # Set webhook on startup
         webhook_url = f"{WEBHOOK_URL}"
         application.bot.set_webhook(webhook_url)
         logger.info(f"Webhook set to: {webhook_url}")
+        logger.info("Bot initialized with all your existing handlers")
     except Exception as e:
         logger.error(f"Failed to set webhook: {e}")
 
 # Initialize when app starts
-if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':  # Avoid double initialization
+if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
     initialize_bot()
 
 if __name__ == '__main__':
