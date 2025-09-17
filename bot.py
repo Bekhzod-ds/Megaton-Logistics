@@ -13,6 +13,8 @@ from telegram.ext import (
     CallbackQueryHandler
 )
 from google_sheets import GoogleSheetsHelper
+from datetime import datetime, timedelta
+import pytz
 
 # Load environment variables
 load_dotenv()
@@ -222,30 +224,33 @@ class TelegramBot:
         return SELECTING_DATE
 
     async def select_date(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle date selection and show available KODs."""
-        query = update.callback_query
-        await query.answer()
-        
-        date_choice = query.data
-        
-        # Handle back navigation
-        if date_choice == "back_to_action":
-            return await self.back_to_action(update, context)
-        
-        # Handle change action request
-        if date_choice == "change_action":
-            return await self.change_action(update, context)
-        
-        # Calculate the selected date
-        today = datetime.now().date()
-        if date_choice == "yesterday":
-            selected_date = today - timedelta(days=1)
-        elif date_choice == "today":
-            selected_date = today
-        elif date_choice == "tomorrow":
-            selected_date = today + timedelta(days=1)
-        
-        date_str = selected_date.strftime("%Y-%m-%d")
+    """Handle date selection and show available KODs."""
+    query = update.callback_query
+    await query.answer()
+    
+    date_choice = query.data
+    
+    # Handle back navigation
+    if date_choice == "back_to_action":
+        return await self.back_to_action(update, context)
+    
+    # Handle change action request
+    if date_choice == "change_action":
+        return await self.change_action(update, context)
+    
+    # Calculate the selected date WITH UZBEKISTAN TIMEZONE
+    uzb_timezone = pytz.timezone('Asia/Tashkent')
+    now_uzb = datetime.now(uzb_timezone)
+    today = now_uzb.date()
+    
+    if date_choice == "yesterday":
+        selected_date = today - timedelta(days=1)
+    elif date_choice == "today":
+        selected_date = today
+    elif date_choice == "tomorrow":
+        selected_date = today + timedelta(days=1)
+    
+    date_str = selected_date.strftime("%Y-%m-%d")
         
         # Store selected date
         context.user_data["selected_date"] = date_str
@@ -631,35 +636,27 @@ class TelegramBot:
         return ENTERING_TRANSPORT
 
     async def enter_card(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Validate and store card number, then ask for payment amount."""
+        """Store card number (any format), then ask for payment amount."""
         if update.callback_query and update.callback_query.data == "back_to_phone":
             return await self.back_to_phone(update, context)
             
         card = update.message.text
         
-        # Remove all non-digit characters for validation
-        card_digits = ''.join(filter(str.isdigit, card))
-        
-        # Simple card validation (only digits, check length)
-        if not card_digits.isdigit() or len(card_digits) < 12:
-            await update.message.reply_text(
-                "Karta raqami noto'g'ri formatda. Iltimos, faqat raqamlar kiriting (kamida 12 ta):\n\n"
-                "Masalan: 4600 7890 0781 2345 yoki 4600789007812345"
-            )
-            return ENTERING_CARD
-        
-        # Store both formatted and digits-only versions
-        context.user_data["karta"] = card  # Store the formatted version
-        context.user_data["karta_digits"] = card_digits  # Store digits-only for validation
+        # Store the card number as-is (accept any format)
+        context.user_data["karta"] = card
         
         # Create keyboard with back button
         keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_card")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
+        # Send the amount prompt message and store its ID
+        amount_message = await update.message.reply_text(
             "Karta raqami qabul qilindi.\n\nIltimos, to'lov summasini kiriting:",
             reply_markup=reply_markup
         )
+        
+        # Store the message ID so we can edit it later when navigating back
+        context.user_data["amount_message_id"] = amount_message.message_id
         
         # Update navigation stack
         if "navigation_stack" in context.user_data:
@@ -747,14 +744,28 @@ class TelegramBot:
         query = update.callback_query
         await query.answer()
         
-        # Create keyboard with back button
+        # Get the stored message ID
+        amount_message_id = context.user_data.get("amount_message_id")
+        
+        # Create keyboard with back button for card entry
         keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_phone")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            "Karta raqamini kiriting:",
-            reply_markup=reply_markup
-        )
+        if amount_message_id:
+            # Edit the existing amount prompt message to become card entry prompt
+            await context.bot.edit_message_text(
+                chat_id=query.message.chat_id,
+                message_id=amount_message_id,
+                text="Karta raqamini kiriting:",
+                reply_markup=reply_markup
+            )
+        else:
+            # Fallback: send a new message
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="Karta raqamini kiriting:",
+                reply_markup=reply_markup
+            )
         
         # Update navigation stack
         if "navigation_stack" in context.user_data and ENTERING_AMOUNT in context.user_data["navigation_stack"]:
@@ -1171,47 +1182,19 @@ class TelegramBot:
         )
 
     def run(self):
-    """Run the bot using polling."""
-    print("🔄 Starting bot polling...")
-    self.application.run_polling()
+        """Run the bot."""
+        self.application.run_polling()
 
 def main():
     """Start the bot."""
-    import logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger = logging.getLogger(__name__)
-    
-    logger.info("🎯 BOT STARTING ON RENDER BACKGROUND WORKER")
-    
-    # Check environment variables
+    # Get bot token from environment variable
     bot_token = os.getenv("BOT_TOKEN")
-    credentials = os.getenv("CREDENTIALS_BASE64")
-    sheet1_id = os.getenv("SHEET1_ID")
-    sheet2_id = os.getenv("SHEET2_ID")
-    
-    logger.info(f"BOT_TOKEN: {'✅ SET' if bot_token else '❌ MISSING'}")
-    logger.info(f"CREDENTIALS_BASE64: {'✅ SET' if credentials else '❌ MISSING'}")
-    logger.info(f"SHEET1_ID: {'✅ SET' if sheet1_id else '❌ MISSING'}")
-    logger.info(f"SHEET2_ID: {'✅ SET' if sheet2_id else '❌ MISSING'}")
-    
     if not bot_token:
-        logger.error("❌ CRITICAL: BOT_TOKEN environment variable not set!")
-        return
+        raise ValueError("BOT_TOKEN environment variable not set")
     
-    try:
-        logger.info("Creating TelegramBot instance...")
-        bot = TelegramBot(bot_token)
-        logger.info("✅ Bot instance created successfully")
-        
-        logger.info("Starting bot polling...")
-        bot.run()  # This will run forever until stopped
-        
-    except Exception as e:
-        logger.error(f"❌ FAILED TO START BOT: {e}")
-        logger.error("Full error:", exc_info=True)
+    # Create and run bot
+    bot = TelegramBot(bot_token)
+    bot.run()
 
 if __name__ == "__main__":
     main()
