@@ -537,25 +537,17 @@ class TelegramBot:
         if update.callback_query and update.callback_query.data == "back_to_address":
             return await self.back_to_address(update, context)
             
-        # Get pre-filled transport if available (for Eski Buyurtma)
-        pre_filled_transport = context.user_data.get("transport", "")
-        
-        if update.message.text:
-            transport = update.message.text
-            # Store transport number
-            context.user_data["transport"] = transport
-        
-        # Create message with pre-filled value
-        prompt = "Transport raqamini kiriting:"
-        if pre_filled_transport:
-            prompt = f"Mavjud transport: {pre_filled_transport}\nYangi transport raqamini kiriting (agar o'zgartirmoqchi bo'lsangiz):"
+        # Store the transport number
+        transport = update.message.text
+        context.user_data["transport"] = transport
         
         # Create keyboard with back button
         keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_transport")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        # ✅ FIXED: Ask for PHONE now, not transport again
         await update.message.reply_text(
-            prompt,
+            "Transport raqami qabul qilindi.\n\nIltimos, haydovchi telefon raqamini kiriting:",
             reply_markup=reply_markup
         )
         
@@ -563,7 +555,7 @@ class TelegramBot:
         if "navigation_stack" in context.user_data:
             context.user_data["navigation_stack"].append(ENTERING_PHONE)
         
-        return ENTERING_PHONE
+        return ENTERING_PHONE  # ✅ Return NEXT state, not current state
         
     async def back_to_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Navigate back to address entry."""
