@@ -25,10 +25,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Define conversation states
-SELECTING_ACTION, SELECTING_DATE, SELECTING_KOD, ENTERING_ADDRESS, ENTERING_TRANSPORT, ENTERING_PHONE, \
+# Define conversation states (add SELECTING_REGION)
+SELECTING_ACTION, SELECTING_DATE, SELECTING_KOD, SELECTING_REGION, ENTERING_ADDRESS, ENTERING_TRANSPORT, ENTERING_PHONE, \
 ENTERING_CARD, ENTERING_AMOUNT, CONFIRMING_OVERWRITE, EDITING_FIELD, \
-REVIEW_SUMMARY = range(11)  # Removed SELECTING_PAYMENT_STATUS
+REVIEW_SUMMARY = range(12)  # Now 12 states total
 
 # Initialize Google Sheets helper
 sheets_helper = GoogleSheetsHelper()
@@ -53,9 +53,9 @@ class TelegramBot:
                     CallbackQueryHandler(self.select_kod),
                     CallbackQueryHandler(self.back_to_date, pattern="^back_to_date$")
                 ],
-                ENTERING_ADDRESS: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.enter_address),
-                    CallbackQueryHandler(self.back_to_kod, pattern="^back_to_kod$")
+                SELECTING_REGION: [
+                   CallbackQueryHandler(self.select_region, pattern="^region:.+$"),
+                   CallbackQueryHandler(self.back_to_kod, pattern="^back_to_date$")
                 ],
                 ENTERING_TRANSPORT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.enter_transport),
@@ -367,22 +367,29 @@ class TelegramBot:
         # Get selected date
         selected_date = context.user_data.get("selected_date", datetime.now().strftime("%Y-%m-%d"))
         
+        # Get MANZIL from Sheet2 for BOTH cases
+        manzil = sheets_helper.get_sheet2_manzil(kod, selected_date)
+        if manzil:
+            context.user_data["manzil"] = manzil
+        
         # Get user action to determine the flow
         user_action = context.user_data.get("action", "")
         
-        # For "Eski Buyurtma", check if order exists in Sheet1
+        # For BOTH "Eski Buyurtma" and "Yangi Buyurtma", show region selection
         if user_action == "Eski Buyurtma":
             existing_order = sheets_helper.get_existing_order(kod, selected_date)
             
             if existing_order:
-                # Show existing order and ask for confirmation to edit/overwrite
+                # Show existing order with region selection
                 tolov_summasi = existing_order.get('To\'lov_summasi', 'N/A')
+                existing_viloyat = existing_order.get('Viloyat', 'N/A')
                 
                 order_text = (
                     f"Mavjud buyurtma:\n"
                     f"Sana: {selected_date}\n"
                     f"KOD: {existing_order.get('KOD', 'N/A')}\n"
-                    f"Manzil: {existing_order.get('Manzil', 'N/A')}\n"
+                    f"Manzil: {manzil or 'N/A'}\n"
+                    f"Viloyat: {existing_viloyat}\n"
                     f"Transport raqami: {existing_order.get('Transport_raqami', 'N/A')}\n"
                     f"Haydovchi telefon: {existing_order.get('Haydovchi_telefon', 'N/A')}\n"
                     f"Karta raqami: {existing_order.get('Karta_raqami', 'N/A')}\n"
@@ -416,8 +423,7 @@ class TelegramBot:
                 )
                 return ConversationHandler.END
                     
-        else:  # "Yangi Buyurtma" - existing logic
-            # ... keep the existing Yangi Buyurtma logic ...
+        else:  # "Yangi Buyurtma" - Show region selection
             existing_order = sheets_helper.get_existing_order(kod, selected_date)
             
             if existing_order:
@@ -441,33 +447,59 @@ class TelegramBot:
                 
                 return CONFIRMING_OVERWRITE
             else:
-                # New order, proceed with data collection
+                # Show region selection buttons for NEW order
+                regions = ["Namangan", "To'raqo'rg'on", "Qo'qon", "Farg'ona", "Andijon", "Toshkent"]
+                
+                keyboard = []
+                for region in regions:
+                    keyboard.append([InlineKeyboardButton(region, callback_data=f"region:{region}")])
+                
+                keyboard.append([InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_date")])
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                message = (f"Tanlangan KOD: {kod}\n"
+                          f"Sana: {selected_date}\n"
+                          f"Manzil: {manzil or 'N/A'}\n\n"
+                          "Iltimos, viloyatni tanlang:")
+                
                 await query.edit_message_text(
-                    text=f"Tanlangan KOD: {kod}\nSana: {selected_date}\n\nIltimos, manzilni kiriting:"
+                    text=message,
+                    reply_markup=reply_markup
                 )
                 
                 # Update navigation stack
                 if "navigation_stack" in context.user_data:
-                    context.user_data["navigation_stack"].append(ENTERING_ADDRESS)
+                    context.user_data["navigation_stack"].append(SELECTING_REGION)
                 
-                return ENTERING_ADDRESS
+                return SELECTING_REGION
 
-    async def enter_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Store address and ask for transport number."""
-        if update.callback_query and update.callback_query.data == "back_to_kod":
-            return await self.back_to_kod(update, context)
-            
-        address = update.message.text
+    async def select_region(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle region selection and proceed to transport entry."""
+        query = update.callback_query
+        await query.answer()
         
-        # Store address
-        context.user_data["manzil"] = address
+        region = query.data.split(":")[1]  # Extract region from callback data
+        context.user_data["viloyat"] = region
+        
+        # Get stored values for confirmation
+        kod = context.user_data.get("kod", "")
+        selected_date = context.user_data.get("selected_date", "")
+        manzil = context.user_data.get("manzil", "")
+        
+        # Show confirmation and proceed to transport
+        message = (f"✅ Viloyat tanlandi: {region}\n"
+                  f"📋 KOD: {kod}\n"
+                  f"📅 Sana: {selected_date}\n"
+                  f"📍 Manzil: {manzil}\n\n"
+                  "Iltimos, transport raqamini kiriting:")
         
         # Create keyboard with back button
-        keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_address")]]
+        keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_region")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            "Manzil qabul qilindi.\n\nIltimos, transport raqamini kiriting:",
+        await query.edit_message_text(
+            text=message,
             reply_markup=reply_markup
         )
         
@@ -476,7 +508,7 @@ class TelegramBot:
             context.user_data["navigation_stack"].append(ENTERING_TRANSPORT)
         
         return ENTERING_TRANSPORT
-
+        
     async def back_to_kod(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Navigate back to KOD selection."""
         query = update.callback_query
@@ -557,22 +589,8 @@ class TelegramBot:
         
         return ENTERING_PHONE  # ✅ Return NEXT state, not current state
         
-    async def back_to_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Navigate back to address entry."""
-        query = update.callback_query
-        await query.answer()
-        
-        kod = context.user_data.get("kod", "")
-        selected_date = context.user_data.get("selected_date", datetime.now().strftime("%Y-%m-%d"))
-        
-        # Create keyboard with back button
-        keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_kod")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            text=f"Tanlangan KOD: {kod}\nSana: {selected_date}\n\nIltimos, manzilni kiriting:",
-            reply_markup=reply_markup
-        )
+
+
         
         # Update navigation stack
         if "navigation_stack" in context.user_data and ENTERING_TRANSPORT in context.user_data["navigation_stack"]:
@@ -598,25 +616,47 @@ class TelegramBot:
             )                      
             return ENTERING_PHONE
         
-        # Store both formatted and digits-only versions
-        context.user_data["telefon"] = phone  # Store the formatted version
-        context.user_data["telefon_digits"] = phone_digits  # Store digits-only for validation
+    async def back_to_region(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Navigate back to region selection from transport."""
+        query = update.callback_query
+        await query.answer()
         
-        # Create keyboard with back button
-        keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_phone")]]
+        # Remove region from context if going back
+        if "viloyat" in context.user_data:
+            del context.user_data["viloyat"]
+        
+        # Get values for message
+        kod = context.user_data.get("kod", "")
+        selected_date = context.user_data.get("selected_date", "")
+        manzil = context.user_data.get("manzil", "")
+        
+        # Show region selection buttons again
+        regions = ["Namangan", "To'raqo'rg'on", "Qo'qon", "Farg'ona", "Andijon", "Toshkent"]
+        
+        keyboard = []
+        for region in regions:
+            keyboard.append([InlineKeyboardButton(region, callback_data=f"region:{region}")])
+        
+        keyboard.append([InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_date")])
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            "Telefon raqami qabul qilindi.\n\nIltimos, karta raqamini kiriting:",
+        message = (f"Tanlangan KOD: {kod}\n"
+                  f"Sana: {selected_date}\n"
+                  f"Manzil: {manzil or 'N/A'}\n\n"
+                  "Iltimos, viloyatni tanlang:")
+        
+        await query.edit_message_text(
+            text=message,
             reply_markup=reply_markup
         )
         
         # Update navigation stack
-        if "navigation_stack" in context.user_data:
-            context.user_data["navigation_stack"].append(ENTERING_CARD)
+        if "navigation_stack" in context.user_data and ENTERING_TRANSPORT in context.user_data["navigation_stack"]:
+            context.user_data["navigation_stack"].remove(ENTERING_TRANSPORT)
         
-        return ENTERING_CARD
-
+        return SELECTING_REGION
+        
     async def back_to_transport(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Navigate back to transport entry."""
         query = update.callback_query
@@ -643,10 +683,8 @@ class TelegramBot:
             return await self.back_to_phone(update, context)
             
         card = update.message.text
-        
-        # Store the card number as-is (accept any format)
-        context.user_data["karta"] = card
-        
+        context.user_data["karta"] = card  # ✅ Accept ANY format
+                
         # Create keyboard with back button
         keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_card")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -907,20 +945,20 @@ class TelegramBot:
         query = update.callback_query
         await query.answer()
         
-        # Get selected date
         selected_date = context.user_data.get("selected_date", datetime.now().strftime("%Y-%m-%d"))
         
-        # Prepare order data
+        # Prepare order data with Viloyat
         order_data = {
             "Sana": selected_date,
             "KOD": context.user_data.get("kod"),
-            "Manzil": context.user_data.get("manzil"),
+            "Manzil": context.user_data.get("manzil", ""),  # From Sheet2
+            "Viloyat": context.user_data.get("viloyat", ""),  # NEW
             "Transport_raqami": context.user_data.get("transport"),
             "Haydovchi_telefon": context.user_data.get("telefon"),
             "Karta_raqami": context.user_data.get("karta"),
             "To'lov_summasi": context.user_data.get("summa")
         }
-        
+                
         # Save to Sheet1
         success_sheet1 = sheets_helper.add_order_to_sheet1(order_data)
         
