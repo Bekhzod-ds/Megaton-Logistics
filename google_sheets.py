@@ -150,6 +150,54 @@ class GoogleSheetsHelper:
             logger.error(f"Error getting KODs from Sheet2: {e}")
             return []
 
+    def get_sheet2_manzil(self, kod: str, date_str: str = None) -> Optional[str]:
+        """
+        Get MANZIL address from Sheet2 for a specific KOD and date.
+        
+        Args:
+            kod: The KOD value to search for
+            date_str: Date string in format "YYYY-MM-DD". If None, uses today's date.
+            
+        Returns:
+            MANZIL address string or None if not found.
+        """
+        try:
+            if date_str is None:
+                date_str = datetime.now().strftime("%Y-%m-%d")
+            
+            sheet2_date = self.convert_date_format(date_str)
+            logger.info(f"Looking for KOD '{kod}' in Sheet2 date: {sheet2_date}")
+            
+            try:
+                worksheet = self.sheet2.worksheet(sheet2_date)
+            except gspread.exceptions.WorksheetNotFound:
+                logger.warning(f"No worksheet found for date: {sheet2_date}")
+                return None
+            
+            # Find the KOD in column D
+            try:
+                cell = worksheet.find(kod, in_column=4)  # Column D = KOD
+                row_number = cell.row
+                logger.info(f"Found KOD '{kod}' at row {row_number}")
+                
+                # Get MANZIL from column C
+                manzil = worksheet.cell(row_number, 3).value  # Column C = MANZIL
+                
+                if manzil and manzil.strip():
+                    logger.info(f"Found MANZIL: {manzil.strip()}")
+                    return manzil.strip()
+                else:
+                    logger.warning(f"MANZIL is empty for KOD '{kod}'")
+                    return None
+                    
+            except gspread.exceptions.CellNotFound:
+                logger.warning(f"KOD '{kod}' not found in Sheet2 worksheet '{sheet2_date}'")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting MANZIL from Sheet2 for KOD '{kod}': {str(e)}")
+            return None
+
     def get_sheet2_order_info(self, kod: str, date_str: str = None) -> Optional[Dict]:
         """Get transport and phone info from Sheet2 for a specific KOD and date."""
         try:
@@ -245,7 +293,7 @@ class GoogleSheetsHelper:
 
     def add_order_to_sheet1(self, order_data: Dict) -> bool:
         """
-        Add a new order to Sheet1 using exact column letters.
+        Add a new order to Sheet1 with Viloyat column.
         """
         try:
             # Get the date and worksheet name
@@ -261,18 +309,18 @@ class GoogleSheetsHelper:
                 logger.info(f"Created new worksheet: {worksheet_name}")
                 
                 # Add headers
-                headers = ["ID", "Sana", "Manzil", "KOD", "Transport Raqami", 
-                          "Haydovchi telefon raqami", "Karta raqami", "To'lov summasi",
+                headers = ["ID", "Sana", "Manzil", "KOD", "Viloyat", 
+                          "Transport Raqami", "Haydovchi telefon raqami", "Karta raqami", "To'lov summasi",
                           "Salarka hajmi (litr da)", "To'lov holati", "To'lov qilingan vaqt", "Izoh"]
                 worksheet.append_row(headers)
             
             # Convert date format
             sana_date = date_obj.strftime("%d.%m.%Y")
             
-            # Get the next available ID by checking column A
+            # Get the next available ID
             try:
                 id_column = worksheet.col_values(1)  # Column A
-                if len(id_column) > 1:  # Has data beyond header
+                if len(id_column) > 1:
                     last_id = int(id_column[-1]) if id_column[-1].isdigit() else 0
                     next_id = last_id + 1
                 else:
@@ -284,20 +332,19 @@ class GoogleSheetsHelper:
             all_data = worksheet.get_all_values()
             next_row = len(all_data) + 1
             
-            # ✅ USE COLUMN LETTERS FOR EXACT PLACEMENT
+            # ✅ USE COLUMN LETTERS WITH VILOYAT (Column E)
             updates = [
-                {'range': f'A{next_row}', 'values': [[str(next_id)]]},           # ID
-                {'range': f'B{next_row}', 'values': [[sana_date]]},              # Sana
-                {'range': f'C{next_row}', 'values': [[order_data.get("Manzil", "")]]},  # Manzil
-                {'range': f'D{next_row}', 'values': [[order_data.get("KOD", "")]]},     # KOD
-                {'range': f'E{next_row}', 'values': [[order_data.get("Transport_raqami", "")]]},  # Transport
-                {'range': f'F{next_row}', 'values': [[order_data.get("Haydovchi_telefon", "")]]}, # Telefon
-                {'range': f'G{next_row}', 'values': [[order_data.get("Karta_raqami", "")]]},      # Karta
-                {'range': f'H{next_row}', 'values': [[order_data.get("To'lov_summasi", "")]]},    # Summa
-                # Columns I-L are left empty intentionally
+                {'range': f'A{next_row}', 'values': [[str(next_id)]]},           # A - ID
+                {'range': f'B{next_row}', 'values': [[sana_date]]},              # B - Sana
+                {'range': f'C{next_row}', 'values': [[order_data.get("Manzil", "")]]},  # C - Manzil
+                {'range': f'D{next_row}', 'values': [[order_data.get("KOD", "")]]},     # D - KOD
+                {'range': f'E{next_row}', 'values': [[order_data.get("Viloyat", "")]]}, # E - Viloyat (NEW)
+                {'range': f'F{next_row}', 'values': [[order_data.get("Transport_raqami", "")]]},  # F - Transport
+                {'range': f'G{next_row}', 'values': [[order_data.get("Haydovchi_telefon", "")]]}, # G - Telefon
+                {'range': f'H{next_row}', 'values': [[order_data.get("Karta_raqami", "")]]},      # H - Karta
+                {'range': f'I{next_row}', 'values': [[order_data.get("To'lov_summasi", "")]]},    # I - Summa
             ]
             
-            # Execute batch update
             worksheet.batch_update(updates)
             
             logger.info(f"✅ Successfully added order to {worksheet_name} at row {next_row}")
