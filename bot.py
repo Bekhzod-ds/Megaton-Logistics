@@ -614,6 +614,25 @@ class TelegramBot:
             )                      
             return ENTERING_PHONE
         
+        # Store both formatted and digits-only versions
+        context.user_data["telefon"] = phone  # Store the formatted version
+        context.user_data["telefon_digits"] = phone_digits  # Store digits-only for validation
+        
+        # Create keyboard with back button
+        keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_phone")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "Telefon raqami qabul qilindi.\n\nIltimos, karta raqamini kiriting:",
+            reply_markup=reply_markup
+        )
+        
+        # Update navigation stack
+        if "navigation_stack" in context.user_data:
+            context.user_data["navigation_stack"].append(ENTERING_CARD)
+        
+        return ENTERING_CARD
+        
     async def back_to_region(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Navigate back to region selection from transport."""
         query = update.callback_query
