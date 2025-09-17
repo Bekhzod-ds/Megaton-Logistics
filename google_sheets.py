@@ -246,17 +246,11 @@ class GoogleSheetsHelper:
     def add_order_to_sheet1(self, order_data: Dict) -> bool:
         """
         Add a new order to Sheet1. Automatically detects month and writes to correct monthly worksheet.
-        
-        Args:
-            order_data: Dictionary containing order information.
-            
-        Returns:
-            True if successful, False otherwise.
         """
         try:
             # Get the date and worksheet name
             date_str = order_data.get("Sana")
-            worksheet_name = self.get_uzbek_month_worksheet(date_str)
+            worksheet_name = self.get_uzbek_month_worksheet(date_str)  # This should return "Sentabr 2025"
             date_obj = datetime.strptime(date_str, "%Y-%m-%d")
             
             # Try to get the worksheet, create if it doesn't exist
@@ -268,9 +262,12 @@ class GoogleSheetsHelper:
                 logger.info(f"Created new worksheet: {worksheet_name}")
                 
                 # Add headers if it's a new worksheet
-                headers = ["ID", "Sana", "Manzil", "KOD", "Transport Raqami", 
-                          "Haydovchi telefon raqami", "Karta raqami", 
-                          "To'lov summasi", "To'lov holati"]
+                headers = [
+                    "ID", "Sana", "Manzil", "KOD", "Transport Raqami", 
+                    "Haydovchi telefon raqami", "Karta raqami", 
+                    "To'lov summasi", "Salarka hajmi (litr da)", 
+                    "To'lov holati", "To'lov qilingan vaqt", "Izoh"
+                ]
                 worksheet.append_row(headers)
             
             # Convert date format for Sheet1 (DD.MM.YYYY)
@@ -287,27 +284,30 @@ class GoogleSheetsHelper:
             except:
                 next_id = 1
             
-            # Prepare data row
+            # Prepare data row - ONLY fill the columns we have data for
             row_data = [
-                str(next_id),  # ID
-                sana_date,  # Sana (in DD.MM.YYYY format)
-                order_data.get("Manzil", ""),
-                order_data.get("KOD", ""),
-                order_data.get("Transport_raqami", ""),
-                order_data.get("Haydovchi_telefon", ""),
-                order_data.get("Karta_raqami", ""),
-                order_data.get("To'lov_summasi", ""),
-                order_data.get("To'lov_holati", "")
+                str(next_id),                       # A - ID
+                sana_date,                          # B - Sana
+                order_data.get("Manzil", ""),       # C - Manzil
+                order_data.get("KOD", ""),          # D - KOD
+                order_data.get("Transport_raqami", ""),    # E - Transport Raqami
+                order_data.get("Haydovchi_telefon", ""),   # F - Haydovchi telefon raqami
+                order_data.get("Karta_raqami", ""),        # G - Karta raqami
+                order_data.get("To'lov_summasi", ""),      # H - To'lov summasi
+                "",                                 # I - Salarka hajmi (EMPTY)
+                "",                                 # J - To'lov holati (EMPTY)
+                "",                                 # K - To'lov qilingan vaqt (EMPTY)
+                ""                                  # L - Izoh (EMPTY)
             ]
             
             # Append the new row
             worksheet.append_row(row_data)
             
-            logger.info(f"Successfully added order to Sheet1 ({worksheet_name}): {order_data.get('KOD')}")
+            logger.info(f"✅ Successfully added order to {worksheet_name}: KOD={order_data.get('KOD')}")
             return True
             
         except Exception as e:
-            logger.error(f"Error adding order to Sheet1: {e}")
+            logger.error(f"❌ Error adding order to Sheet1: {str(e)}")
             return False
 
     def update_order_in_sheet1(self, kod: str, order_data: Dict) -> bool:
