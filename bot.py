@@ -85,14 +85,16 @@ class TelegramBot:
                 ]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],
+            allow_reentry=True
         )
         
         self.application.add_handler(conv_handler)
         
         # Add a separate handler for /start command that can interrupt any conversation
-        self.application.add_handler(CommandHandler("start", self.start))
+        #1 self.application.add_handler(CommandHandler("start", self.start))
         self.application.add_handler(CommandHandler("change", self.change_action))
         self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("start", self.force_start))
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Send message on `/start` and ask user to choose an action. Completely resets the conversation."""
@@ -100,20 +102,19 @@ class TelegramBot:
         logger.info("User %s started the conversation.", user.first_name)
         
         # Clear all user data thoroughly
-        if context.user_data:
-            context.user_data.clear()
+        context.user_data.clear()
         
-        # Initialize navigation stack
-        context.user_data["navigation_stack"] = []
+        # Initialize fresh navigation stack
+        context.user_data["navigation_stack"] = [SELECTING_ACTION]
+        context.user_data["last_activity"] = datetime.now()
         
-        # If this was called via callback query (from a button), we need to edit the message
+        # Create keyboard with options
+        reply_keyboard = [["Yangi Buyurtma", "Eski Buyurtma"]]
+        
+        # Check if we need to edit an existing message or send a new one
         if update.callback_query:
             query = update.callback_query
             await query.answer()
-            
-            # Create keyboard with options
-            reply_keyboard = [["Yangi Buyurtma", "Eski Buyurtma"]]
-            
             await query.edit_message_text(
                 "🔄 Assalomu alaykum! Bot yangilandi.\n"
                 "Quyidagilardan birini tanlang:",
@@ -124,10 +125,6 @@ class TelegramBot:
                 ),
             )
         else:
-            # Regular message-based start
-            # Create keyboard with options
-            reply_keyboard = [["Yangi Buyurtma", "Eski Buyurtma"]]
-            
             await update.message.reply_text(
                 "Assalomu alaykum! Botimizga xush kelibsiz.\n"
                 "Quyidagilardan birini tanlang:",
@@ -138,10 +135,16 @@ class TelegramBot:
                 ),
             )
         
-        # Update navigation stack
-        context.user_data["navigation_stack"].append(SELECTING_ACTION)
-        
         return SELECTING_ACTION
+
+    # Add this method to handle /start commands that interrupt conversations
+    async def force_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Force start a new conversation regardless of current state."""
+        # Clear all user data
+        context.user_data.clear()
+        
+        # Call the regular start method
+        return await self.start(update, context)
 
     async def change_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Allow user to change their action selection (Yangi/Eski)."""
@@ -1155,20 +1158,6 @@ class TelegramBot:
         
         return ConversationHandler.END
 
-    def set_webhook(self, webhook_url):
-        """Set webhook for the bot."""
-        try:
-            # Remove any existing webhook first
-            self.application.bot.delete_webhook()
-            
-            # Set new webhook
-            success = self.application.bot.set_webhook(webhook_url)
-            logger.info(f"Webhook set to: {webhook_url}")
-            return success
-        except Exception as e:
-            logger.error(f"Failed to set webhook: {e}")
-            return False
-
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send a message when the command /help is issued."""
         await update.message.reply_text(
@@ -1180,3 +1169,49 @@ class TelegramBot:
             "Har qanday bosqichda /start ni bosish orqali yangidan boshlashingiz mumkin.\n"
             "/change buyrug'i orqali Yangi/Eski buyurtma tanlovini o'zgartirishingiz mumkin."
         )
+
+    def run(self):
+    """Run the bot using polling."""
+    print("🔄 Starting bot polling...")
+    self.application.run_polling()
+
+def main():
+    """Start the bot."""
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
+    logger.info("🎯 BOT STARTING ON RENDER BACKGROUND WORKER")
+    
+    # Check environment variables
+    bot_token = os.getenv("BOT_TOKEN")
+    credentials = os.getenv("CREDENTIALS_BASE64")
+    sheet1_id = os.getenv("SHEET1_ID")
+    sheet2_id = os.getenv("SHEET2_ID")
+    
+    logger.info(f"BOT_TOKEN: {'✅ SET' if bot_token else '❌ MISSING'}")
+    logger.info(f"CREDENTIALS_BASE64: {'✅ SET' if credentials else '❌ MISSING'}")
+    logger.info(f"SHEET1_ID: {'✅ SET' if sheet1_id else '❌ MISSING'}")
+    logger.info(f"SHEET2_ID: {'✅ SET' if sheet2_id else '❌ MISSING'}")
+    
+    if not bot_token:
+        logger.error("❌ CRITICAL: BOT_TOKEN environment variable not set!")
+        return
+    
+    try:
+        logger.info("Creating TelegramBot instance...")
+        bot = TelegramBot(bot_token)
+        logger.info("✅ Bot instance created successfully")
+        
+        logger.info("Starting bot polling...")
+        bot.run()  # This will run forever until stopped
+        
+    except Exception as e:
+        logger.error(f"❌ FAILED TO START BOT: {e}")
+        logger.error("Full error:", exc_info=True)
+
+if __name__ == "__main__":
+    main()
