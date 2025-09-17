@@ -153,14 +153,7 @@ class GoogleSheetsHelper:
     def get_existing_order(self, kod: str, date_str: str = None) -> Optional[Dict]:
         """
         Check if an order already exists for a given KOD in Sheet1.
-        Searches in the correct monthly worksheet.
-        
-        Args:
-            kod: The KOD value to search for.
-            date_str: Date string in format "YYYY-MM-DD". If None, uses today's date.
-            
-        Returns:
-            Dictionary with existing order data or None if not found.
+        Uses raw data instead of get_all_records() to avoid duplicate header issues.
         """
         try:
             if date_str is None:
@@ -175,20 +168,45 @@ class GoogleSheetsHelper:
                 logger.warning(f"Worksheet not found: {worksheet_name}")
                 return None
             
-            # Convert date format for comparison (Sheet1 uses DD.MM.YYYY)
+            # Convert date format for Sheet1 (DD.MM.YYYY)
             compare_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
             
-            # Get all records
-            records = worksheet.get_all_records()
+            # Get all values as raw data (avoiding get_all_records)
+            all_data = worksheet.get_all_values()
+            
+            if len(all_data) < 2:  # No data beyond headers
+                return None
+            
+            # Get headers from first row
+            headers = all_data[0]
             
             # Find record with matching KOD and date
-            for record in records:
-                if (record.get("KOD") == kod and 
-                    record.get("Sana") == compare_date):
-                    return record
+            for row in all_data[1:]:  # Skip header row
+                if len(row) < len(headers):
+                    continue  # Skip incomplete rows
                     
-            return None
+                # Create a dictionary from this row
+                record = {}
+                for i, header in enumerate(headers):
+                    if i < len(row):
+                        record[header] = row[i]
+                
+                record_kod = record.get("KOD", "").strip()
+                record_date = record.get("Sana", "")
+                
+                # Convert record_date to string if it's a datetime object
+                if hasattr(record_date, 'strftime'):
+                    record_date = record_date.strftime("%d.%m.%Y")
+                elif isinstance(record_date, str):
+                    record_date = record_date.strip()
+                
+                if (record_kod == kod and record_date == compare_date):
+                    logger.info(f"Found existing order: {record}")
+                    return record
             
+            logger.warning(f"No order found for KOD: {kod}, Date: {compare_date}")
+            return None
+                
         except Exception as e:
             logger.error(f"Error checking existing order: {e}")
             return None
