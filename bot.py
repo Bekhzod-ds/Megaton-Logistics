@@ -956,7 +956,6 @@ class TelegramBot:
                 f"Transport raqami: {order_data['Transport_raqami']}\n"
                 f"Haydovchi telefon: {order_data['Haydovchi_telefon']}\n"
                 f"Karta raqami: {order_data['Karta_raqami']}\n"
-                f"To'lov summasi: {tolov_summasi} so'm"
             )
             
             # Add Sheet2 status message
