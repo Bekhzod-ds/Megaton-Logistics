@@ -245,65 +245,62 @@ class GoogleSheetsHelper:
 
     def add_order_to_sheet1(self, order_data: Dict) -> bool:
         """
-        Add a new order to Sheet1. Automatically detects month and writes to correct monthly worksheet.
+        Add a new order to Sheet1 using exact column letters.
         """
         try:
             # Get the date and worksheet name
             date_str = order_data.get("Sana")
-            worksheet_name = self.get_uzbek_month_worksheet(date_str)  # This should return "Sentabr 2025"
+            worksheet_name = self.get_uzbek_month_worksheet(date_str)
             date_obj = datetime.strptime(date_str, "%Y-%m-%d")
             
-            # Try to get the worksheet, create if it doesn't exist
+            # Try to get the worksheet
             try:
                 worksheet = self.sheet1.worksheet(worksheet_name)
             except gspread.exceptions.WorksheetNotFound:
-                # Create new worksheet if it doesn't exist
                 worksheet = self.sheet1.add_worksheet(title=worksheet_name, rows=1000, cols=20)
                 logger.info(f"Created new worksheet: {worksheet_name}")
                 
-                # Add headers if it's a new worksheet
-                headers = [
-                    "ID", "Sana", "Manzil", "KOD", "Transport Raqami", 
-                    "Haydovchi telefon raqami", "Karta raqami", 
-                    "To'lov summasi", "Salarka hajmi (litr da)", 
-                    "To'lov holati", "To'lov qilingan vaqt", "Izoh"
-                ]
+                # Add headers
+                headers = ["ID", "Sana", "Manzil", "KOD", "Transport Raqami", 
+                          "Haydovchi telefon raqami", "Karta raqami", "To'lov summasi",
+                          "Salarka hajmi (litr da)", "To'lov holati", "To'lov qilingan vaqt", "Izoh"]
                 worksheet.append_row(headers)
             
-            # Convert date format for Sheet1 (DD.MM.YYYY)
+            # Convert date format
             sana_date = date_obj.strftime("%d.%m.%Y")
             
-            # Get the next available ID
+            # Get the next available ID by checking column A
             try:
-                existing_data = worksheet.get_all_values()
-                if len(existing_data) > 1:  # Has data beyond header
-                    last_id = int(existing_data[-1][0]) if existing_data[-1][0].isdigit() else 0
+                id_column = worksheet.col_values(1)  # Column A
+                if len(id_column) > 1:  # Has data beyond header
+                    last_id = int(id_column[-1]) if id_column[-1].isdigit() else 0
                     next_id = last_id + 1
                 else:
                     next_id = 1
             except:
                 next_id = 1
             
-            # Prepare data row - ONLY fill the columns we have data for
-            row_data = [
-                str(next_id),                       # A - ID
-                sana_date,                          # B - Sana
-                order_data.get("Manzil", ""),       # C - Manzil
-                order_data.get("KOD", ""),          # D - KOD
-                order_data.get("Transport_raqami", ""),    # E - Transport Raqami
-                order_data.get("Haydovchi_telefon", ""),   # F - Haydovchi telefon raqami
-                order_data.get("Karta_raqami", ""),        # G - Karta raqami
-                order_data.get("To'lov_summasi", ""),      # H - To'lov summasi
-                "",                                 # I - Salarka hajmi (EMPTY)
-                "",                                 # J - To'lov holati (EMPTY)
-                "",                                 # K - To'lov qilingan vaqt (EMPTY)
-                ""                                  # L - Izoh (EMPTY)
+            # Find the next empty row
+            all_data = worksheet.get_all_values()
+            next_row = len(all_data) + 1
+            
+            # ✅ USE COLUMN LETTERS FOR EXACT PLACEMENT
+            updates = [
+                {'range': f'A{next_row}', 'values': [[str(next_id)]]},           # ID
+                {'range': f'B{next_row}', 'values': [[sana_date]]},              # Sana
+                {'range': f'C{next_row}', 'values': [[order_data.get("Manzil", "")]]},  # Manzil
+                {'range': f'D{next_row}', 'values': [[order_data.get("KOD", "")]]},     # KOD
+                {'range': f'E{next_row}', 'values': [[order_data.get("Transport_raqami", "")]]},  # Transport
+                {'range': f'F{next_row}', 'values': [[order_data.get("Haydovchi_telefon", "")]]}, # Telefon
+                {'range': f'G{next_row}', 'values': [[order_data.get("Karta_raqami", "")]]},      # Karta
+                {'range': f'H{next_row}', 'values': [[order_data.get("To'lov_summasi", "")]]},    # Summa
+                # Columns I-L are left empty intentionally
             ]
             
-            # Append the new row
-            worksheet.append_row(row_data)
+            # Execute batch update
+            worksheet.batch_update(updates)
             
-            logger.info(f"✅ Successfully added order to {worksheet_name}: KOD={order_data.get('KOD')}")
+            logger.info(f"✅ Successfully added order to {worksheet_name} at row {next_row}")
             return True
             
         except Exception as e:
@@ -312,52 +309,51 @@ class GoogleSheetsHelper:
 
     def update_order_in_sheet1(self, kod: str, order_data: Dict) -> bool:
         """
-        Update an existing order in Sheet1. Finds the correct worksheet based on date.
-        
-        Args:
-            kod: The KOD value to update.
-            order_data: Dictionary containing updated order information.
-            
-        Returns:
-            True if successful, False otherwise.
+        Update an existing order in Sheet1 using column letters.
         """
         try:
             date_str = order_data.get("Sana", datetime.now().strftime("%Y-%m-%d"))
             worksheet_name = self.get_uzbek_month_worksheet(date_str)
             
-            # Try to get the worksheet
             try:
                 worksheet = self.sheet1.worksheet(worksheet_name)
             except gspread.exceptions.WorksheetNotFound:
                 logger.warning(f"Worksheet not found: {worksheet_name}")
                 return False
             
-            # Convert date format for comparison (Sheet1 uses DD.MM.YYYY)
+            # Convert date format for comparison
             compare_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
             
-            # Get all records
-            records = worksheet.get_all_records()
-            
-            # Find the row index of the record to update
-            for i, record in enumerate(records, start=2):  # Start from row 2 (skip header)
-                if (record.get("KOD") == kod and 
-                    record.get("Sana") == compare_date):
-                    
-                    # Update the row (columns C through I)
-                    worksheet.update(f"C{i}", order_data.get("Manzil", ""))  # Manzil
-                    worksheet.update(f"D{i}", order_data.get("KOD", ""))  # KOD
-                    worksheet.update(f"E{i}", order_data.get("Transport_raqami", ""))  # Transport raqami
-                    worksheet.update(f"F{i}", order_data.get("Haydovchi_telefon", ""))  # Haydovchi telefon
-                    worksheet.update(f"G{i}", order_data.get("Karta_raqami", ""))  # Karta raqami
-                    worksheet.update(f"H{i}", order_data.get("To'lov_summasi", ""))  # To'lov summasi
-                    worksheet.update(f"I{i}", order_data.get("To'lov_holati", ""))  # To'lov holati
-                    
-                    logger.info(f"Successfully updated order in Sheet1 ({worksheet_name}): {kod}")
-                    return True
-            
-            logger.warning(f"Order not found for update: {kod} in {worksheet_name}")
-            return False
-            
+            # Find the row with matching KOD and date
+            try:
+                # Find KOD in column D
+                kod_cells = worksheet.findall(kod, in_column=4)  # Column D = KOD
+                
+                for cell in kod_cells:
+                    row_number = cell.row
+                    # Check if date in column B matches
+                    row_date = worksheet.cell(row_number, 2).value  # Column B = Sana
+                    if row_date == compare_date:
+                        # ✅ UPDATE USING COLUMN LETTERS
+                        updates = [
+                            {'range': f'C{row_number}', 'values': [[order_data.get("Manzil", "")]]},  # Manzil
+                            {'range': f'E{row_number}', 'values': [[order_data.get("Transport_raqami", "")]]},  # Transport
+                            {'range': f'F{row_number}', 'values': [[order_data.get("Haydovchi_telefon", "")]]}, # Telefon
+                            {'range': f'G{row_number}', 'values': [[order_data.get("Karta_raqami", "")]]},      # Karta
+                            {'range': f'H{row_number}', 'values': [[order_data.get("To'lov_summasi", "")]]},    # Summa
+                        ]
+                        
+                        worksheet.batch_update(updates)
+                        logger.info(f"✅ Successfully updated order in row {row_number}")
+                        return True
+                
+                logger.warning(f"Order not found for update: {kod} in {worksheet_name}")
+                return False
+                
+            except gspread.exceptions.CellNotFound:
+                logger.warning(f"KOD not found: {kod} in {worksheet_name}")
+                return False
+                
         except Exception as e:
             logger.error(f"Error updating order in Sheet1: {e}")
             return False
