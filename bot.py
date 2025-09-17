@@ -224,34 +224,34 @@ class TelegramBot:
         return SELECTING_DATE
 
     async def select_date(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle date selection and show available KODs."""
-    query = update.callback_query
-    await query.answer()
-    
-    date_choice = query.data
-    
-    # Handle back navigation
-    if date_choice == "back_to_action":
-        return await self.back_to_action(update, context)
-    
-    # Handle change action request
-    if date_choice == "change_action":
-        return await self.change_action(update, context)
-    
-    # Calculate the selected date WITH UZBEKISTAN TIMEZONE
-    uzb_timezone = pytz.timezone('Asia/Tashkent')
-    now_uzb = datetime.now(uzb_timezone)
-    today = now_uzb.date()
-    
-    if date_choice == "yesterday":
-        selected_date = today - timedelta(days=1)
-    elif date_choice == "today":
-        selected_date = today
-    elif date_choice == "tomorrow":
-        selected_date = today + timedelta(days=1)
-    
-    date_str = selected_date.strftime("%Y-%m-%d")
+        """Handle date selection and show available KODs."""
+        query = update.callback_query
+        await query.answer()
         
+        date_choice = query.data
+        
+        # Handle back navigation
+        if date_choice == "back_to_action":
+            return await self.back_to_action(update, context)
+        
+        # Handle change action request
+        if date_choice == "change_action":
+            return await self.change_action(update, context)
+        
+        # Calculate the selected date WITH UZBEKISTAN TIMEZONE
+        uzb_timezone = pytz.timezone('Asia/Tashkent')
+        now_uzb = datetime.now(uzb_timezone)
+        today = now_uzb.date()
+        
+        if date_choice == "yesterday":
+            selected_date = today - timedelta(days=1)
+        elif date_choice == "today":
+            selected_date = today
+        elif date_choice == "tomorrow":
+            selected_date = today + timedelta(days=1)
+        
+        date_str = selected_date.strftime("%Y-%m-%d")
+
         # Store selected date
         context.user_data["selected_date"] = date_str
         
