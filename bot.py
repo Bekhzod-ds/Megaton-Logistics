@@ -370,46 +370,54 @@ class TelegramBot:
         # Get user action to determine the flow
         user_action = context.user_data.get("action", "")
         
-        # For "Eski Buyurtma", get data from Sheet2 and pre-fill
+        # For "Eski Buyurtma", check if order exists in Sheet1
         if user_action == "Eski Buyurtma":
-            # Get existing transport/phone info from Sheet2
-            sheet2_info = sheets_helper.get_sheet2_order_info(kod, selected_date)
+            existing_order = sheets_helper.get_existing_order(kod, selected_date)
             
-            if sheet2_info:
-                # Pre-fill the data for editing
-                context.user_data["transport"] = sheet2_info.get("Transport_raqami", "")
-                context.user_data["telefon"] = sheet2_info.get("Haydovchi_telefon", "")
+            if existing_order:
+                # Show existing order and ask for confirmation to edit/overwrite
+                tolov_summasi = existing_order.get('To\'lov_summasi', 'N/A')
                 
-                # Show pre-filled data and ask for address
-                message_text = (
-                    f"Tanlangan KOD: {kod}\n"
-                    f"Sana: {selected_date}\n\n"
-                    f"🚚 Mavjud Transport: {sheet2_info.get('Transport_raqami', 'Yo\'q')}\n"
-                    f"📞 Mavjud Telefon: {sheet2_info.get('Haydovchi_telefon', 'Yo\'q')}\n\n"
-                    "Iltimos, yangi manzilni kiriting (agar o'zgartirmoqchi bo'lsangiz):"
+                order_text = (
+                    f"Mavjud buyurtma:\n"
+                    f"Sana: {selected_date}\n"
+                    f"KOD: {existing_order.get('KOD', 'N/A')}\n"
+                    f"Manzil: {existing_order.get('Manzil', 'N/A')}\n"
+                    f"Transport raqami: {existing_order.get('Transport_raqami', 'N/A')}\n"
+                    f"Haydovchi telefon: {existing_order.get('Haydovchi_telefon', 'N/A')}\n"
+                    f"Karta raqami: {existing_order.get('Karta_raqami', 'N/A')}\n"
+                    f"To'lov summasi: {tolov_summasi}\n\n"
+                    "Mavjud yozuv bor. O'zgartirasizmi yoki ustidan yozasizmi?"
                 )
                 
-                await query.edit_message_text(text=message_text)
+                keyboard = [
+                    [
+                        InlineKeyboardButton("O'zgartirish", callback_data="edit"),
+                        InlineKeyboardButton("Ustidan yozish", callback_data="overwrite")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                # Update navigation stack
-                if "navigation_stack" in context.user_data:
-                    context.user_data["navigation_stack"].append(ENTERING_ADDRESS)
-                
-                return ENTERING_ADDRESS
-            else:
-                # Fallback: proceed normally
                 await query.edit_message_text(
-                    text=f"Tanlangan KOD: {kod}\nSana: {selected_date}\n\nIltimos, manzilni kiriting:"
+                    text=order_text,
+                    reply_markup=reply_markup
                 )
                 
-                # Update navigation stack
-                if "navigation_stack" in context.user_data:
-                    context.user_data["navigation_stack"].append(ENTERING_ADDRESS)
+                # Store existing order data for potential editing
+                context.user_data["existing_order"] = existing_order
                 
-                return ENTERING_ADDRESS
+                return CONFIRMING_OVERWRITE
+            else:
+                # No existing order found for "Eski Buyurtma"
+                await query.edit_message_text(
+                    text=f"❌ {selected_date} sanasida '{kod}' KODi uchun buyurtma topilmadi.\n\n"
+                         "Iltimos, boshqa KOD yoki sana tanlang.\n\n"
+                         "Yangi buyurtma uchun /start ni bosing."
+                )
+                return ConversationHandler.END
                     
         else:  # "Yangi Buyurtma" - existing logic
-            # Check if this KOD already has an order in Sheet1
+            # ... keep the existing Yangi Buyurtma logic ...
             existing_order = sheets_helper.get_existing_order(kod, selected_date)
             
             if existing_order:
