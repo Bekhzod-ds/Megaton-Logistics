@@ -367,57 +367,51 @@ class TelegramBot:
         # Get selected date
         selected_date = context.user_data.get("selected_date", datetime.now().strftime("%Y-%m-%d"))
         
-        # Check if this KOD already has an order in Sheet1
-        existing_order = sheets_helper.get_existing_order(kod, selected_date)
-        
         # Get user action to determine the flow
         user_action = context.user_data.get("action", "")
         
-        # For "Eski Buyurtma", we expect existing orders
+        # For "Eski Buyurtma", get data from Sheet2 and pre-fill
         if user_action == "Eski Buyurtma":
-            if existing_order:
-                # Show existing order and ask for confirmation to edit/overwrite
-                tolov_summasi = existing_order.get('To\'lov_summasi', 'N/A')  # Fixed the backslash issue
+            # Get existing transport/phone info from Sheet2
+            sheet2_info = sheets_helper.get_sheet2_order_info(kod, selected_date)
+            
+            if sheet2_info:
+                # Pre-fill the data for editing
+                context.user_data["transport"] = sheet2_info.get("Transport_raqami", "")
+                context.user_data["telefon"] = sheet2_info.get("Haydovchi_telefon", "")
                 
-                order_text = (
-                    f"Mavjud buyurtma:\n"
-                    f"Sana: {selected_date}\n"
-                    f"KOD: {existing_order.get('KOD', 'N/A')}\n"
-                    f"Manzil: {existing_order.get('Manzil', 'N/A')}\n"
-                    f"Transport raqami: {existing_order.get('Transport_raqami', 'N/A')}\n"
-                    f"Haydovchi telefon: {existing_order.get('Haydovchi_telefon', 'N/A')}\n"
-                    f"Karta raqami: {existing_order.get('Karta_raqami', 'N/A')}\n"
-                    f"To'lov summasi: {tolov_summasi}\n\n"
-                    "Mavjud yozuv bor. O'zgartirasizmi yoki ustidan yozasizmi?"
+                # Show pre-filled data and ask for address
+                message_text = (
+                    f"Tanlangan KOD: {kod}\n"
+                    f"Sana: {selected_date}\n\n"
+                    f"🚚 Mavjud Transport: {sheet2_info.get('Transport_raqami', 'Yo\'q')}\n"
+                    f"📞 Mavjud Telefon: {sheet2_info.get('Haydovchi_telefon', 'Yo\'q')}\n\n"
+                    "Iltimos, yangi manzilni kiriting (agar o'zgartirmoqchi bo'lsangiz):"
                 )
                 
-                keyboard = [
-                    [
-                        InlineKeyboardButton("O'zgartirish", callback_data="edit"),
-                        InlineKeyboardButton("Ustidan yozish", callback_data="overwrite")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(text=message_text)
                 
-                await query.edit_message_text(
-                    text=order_text,
-                    reply_markup=reply_markup
-                )
+                # Update navigation stack
+                if "navigation_stack" in context.user_data:
+                    context.user_data["navigation_stack"].append(ENTERING_ADDRESS)
                 
-                # Store existing order data for potential editing
-                context.user_data["existing_order"] = existing_order
-                
-                return CONFIRMING_OVERWRITE
+                return ENTERING_ADDRESS
             else:
-                # No existing order found for "Eski Buyurtma"
+                # Fallback: proceed normally
                 await query.edit_message_text(
-                    text=f"❌ {selected_date} sanasida '{kod}' KODi uchun buyurtma topilmadi.\n\n"
-                         "Iltimos, boshqa KOD yoki sana tanlang.\n\n"
-                         "Yangi buyurtma uchun /start ni bosing."
+                    text=f"Tanlangan KOD: {kod}\nSana: {selected_date}\n\nIltimos, manzilni kiriting:"
                 )
-                return ConversationHandler.END
                 
-        else:  # "Yangi Buyurtma"
+                # Update navigation stack
+                if "navigation_stack" in context.user_data:
+                    context.user_data["navigation_stack"].append(ENTERING_ADDRESS)
+                
+                return ENTERING_ADDRESS
+                    
+        else:  # "Yangi Buyurtma" - existing logic
+            # Check if this KOD already has an order in Sheet1
+            existing_order = sheets_helper.get_existing_order(kod, selected_date)
+            
             if existing_order:
                 # Existing order found for "Yangi Buyurtma" - ask what to do
                 keyboard = [
@@ -535,17 +529,25 @@ class TelegramBot:
         if update.callback_query and update.callback_query.data == "back_to_address":
             return await self.back_to_address(update, context)
             
-        transport = update.message.text
+        # Get pre-filled transport if available (for Eski Buyurtma)
+        pre_filled_transport = context.user_data.get("transport", "")
         
-        # Store transport number
-        context.user_data["transport"] = transport
+        if update.message.text:
+            transport = update.message.text
+            # Store transport number
+            context.user_data["transport"] = transport
+        
+        # Create message with pre-filled value
+        prompt = "Transport raqamini kiriting:"
+        if pre_filled_transport:
+            prompt = f"Mavjud transport: {pre_filled_transport}\nYangi transport raqamini kiriting (agar o'zgartirmoqchi bo'lsangiz):"
         
         # Create keyboard with back button
         keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_transport")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            "Transport raqami qabul qilindi.\n\nIltimos, haydovchi telefon raqamini kiriting:",
+            prompt,
             reply_markup=reply_markup
         )
         
@@ -554,7 +556,7 @@ class TelegramBot:
             context.user_data["navigation_stack"].append(ENTERING_PHONE)
         
         return ENTERING_PHONE
-
+        
     async def back_to_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Navigate back to address entry."""
         query = update.callback_query
