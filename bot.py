@@ -58,8 +58,8 @@ class TelegramBot:
                    CallbackQueryHandler(self.back_to_kod, pattern="^back_to_date$")
                 ],
                 ENTERING_TRANSPORT: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.enter_transport),
-                    CallbackQueryHandler(self.back_to_address, pattern="^back_to_address$")
+                   MessageHandler(filters.TEXT & ~filters.COMMAND, self.enter_transport),
+                   CallbackQueryHandler(self.back_to_region, pattern="^back_to_region$")  # ✅ CORRECT
                 ],
                 ENTERING_PHONE: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.enter_phone),
@@ -566,8 +566,8 @@ class TelegramBot:
 
     async def enter_transport(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Store transport number and ask for driver phone."""
-        if update.callback_query and update.callback_query.data == "back_to_address":
-            return await self.back_to_address(update, context)
+        if update.callback_query and update.callback_query.data == "back_to_region":  # ✅ CORRECT
+            return await self.back_to_region(update, context)  # ✅ CORRECT
             
         # Store the transport number
         transport = update.message.text
@@ -589,14 +589,12 @@ class TelegramBot:
         
         return ENTERING_PHONE  # ✅ Return NEXT state, not current state
         
-
-
         
         # Update navigation stack
         if "navigation_stack" in context.user_data and ENTERING_TRANSPORT in context.user_data["navigation_stack"]:
             context.user_data["navigation_stack"].remove(ENTERING_TRANSPORT)
         
-        return ENTERING_ADDRESS
+        return SELECTING_REGION
 
     async def enter_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Validate and store phone number, then ask for card number."""
@@ -663,7 +661,7 @@ class TelegramBot:
         await query.answer()
         
         # Create keyboard with back button
-        keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_address")]]
+        keyboard = [[InlineKeyboardButton("◀️ Orqaga", callback_data="back_to_region")]]  # ✅ CORRECT
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
