@@ -150,6 +150,38 @@ class GoogleSheetsHelper:
             logger.error(f"Error getting KODs from Sheet2: {e}")
             return []
 
+    def get_sheet2_order_info(self, kod: str, date_str: str = None) -> Optional[Dict]:
+        """Get transport and phone info from Sheet2 for a specific KOD and date."""
+        try:
+            if date_str is None:
+                date_str = datetime.now().strftime("%Y-%m-%d")
+            
+            sheet2_date = self.convert_date_format(date_str)
+            
+            try:
+                worksheet = self.sheet2.worksheet(sheet2_date)
+            except gspread.exceptions.WorksheetNotFound:
+                logger.warning(f"No worksheet found for date: {sheet2_date}")
+                return None
+            
+            data = worksheet.get_all_values()
+            
+            for row in data:
+                if len(row) > 3 and row[3] == kod:  # KOD in column D
+                    transport = row[13] if len(row) > 13 else ""  # Column N
+                    phone = row[14] if len(row) > 14 else ""     # Column O
+                    
+                    return {
+                        "Transport_raqami": transport.strip(),
+                        "Haydovchi_telefon": phone.strip()
+                    }
+            
+            return None
+                
+        except Exception as e:
+            logger.error(f"Error getting Sheet2 order info: {e}")
+            return None
+
     def get_existing_order(self, kod: str, date_str: str = None) -> Optional[Dict]:
         """
         Check if an order already exists for a given KOD in Sheet1.
