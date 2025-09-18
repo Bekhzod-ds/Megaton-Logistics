@@ -293,7 +293,8 @@ class GoogleSheetsHelper:
 
     def add_order_to_sheet1(self, order_data: Dict) -> bool:
         """
-        Add a new order to Sheet1 with Viloyat column.
+        Add a new order to Sheet1 using exact column letters.
+        Finds the first truly empty row instead of just appending.
         """
         try:
             # Get the date and worksheet name
@@ -301,7 +302,7 @@ class GoogleSheetsHelper:
             worksheet_name = self.get_uzbek_month_worksheet(date_str)
             date_obj = datetime.strptime(date_str, "%Y-%m-%d")
             
-            # Try to get the worksheet
+            # Try to get the worksheet, create if it doesn't exist
             try:
                 worksheet = self.sheet1.worksheet(worksheet_name)
             except gspread.exceptions.WorksheetNotFound:
@@ -309,28 +310,45 @@ class GoogleSheetsHelper:
                 logger.info(f"Created new worksheet: {worksheet_name}")
                 
                 # Add headers
-                headers = ["ID", "Sana", "Manzil", "KOD", "Viloyat", 
-                          "Transport Raqami", "Haydovchi telefon raqami", "Karta raqami", "To'lov summasi",
+                headers = ["ID", "Sana", "Manzil", "KOD", "Viloyat", "Transport Raqami", 
+                          "Haydovchi telefon raqami", "Karta raqami", "To'lov summasi",
                           "Salarka hajmi (litr da)", "To'lov holati", "To'lov qilingan vaqt", "Izoh"]
                 worksheet.append_row(headers)
             
             # Convert date format
             sana_date = date_obj.strftime("%d.%m.%Y")
             
-            # Get the next available ID
+            # Find the first truly empty row (where column A is empty)
+            all_data = worksheet.get_all_values()
+            next_row = 2  # Start from row 2 (after headers)
+            
+            # Find the first empty row by checking if column A is empty
+            for i, row in enumerate(all_data[1:], start=2):  # Skip header, start from row 2
+                if len(row) == 0 or not row[0].strip():  # Check if first cell (ID) is empty
+                    next_row = i
+                    break
+            else:
+                # If no empty rows found, use the next row after existing data
+                next_row = len(all_data) + 1
+            
+            # Get the next available ID by checking existing IDs in column A
             try:
                 id_column = worksheet.col_values(1)  # Column A
-                if len(id_column) > 1:
-                    last_id = int(id_column[-1]) if id_column[-1].isdigit() else 0
-                    next_id = last_id + 1
+                if len(id_column) > 1:  # Has data beyond header
+                    # Get all numeric IDs and find the max
+                    numeric_ids = []
+                    for cell_value in id_column[1:]:  # Skip header
+                        if cell_value.isdigit():
+                            numeric_ids.append(int(cell_value))
+                    
+                    if numeric_ids:
+                        next_id = max(numeric_ids) + 1
+                    else:
+                        next_id = 1
                 else:
                     next_id = 1
             except:
                 next_id = 1
-            
-            # Find the next empty row
-            all_data = worksheet.get_all_values()
-            next_row = len(all_data) + 1
             
             # ✅ USE COLUMN LETTERS WITH VILOYAT (Column E)
             updates = [
@@ -343,8 +361,10 @@ class GoogleSheetsHelper:
                 {'range': f'G{next_row}', 'values': [[order_data.get("Haydovchi_telefon", "")]]}, # G - Telefon
                 {'range': f'H{next_row}', 'values': [[order_data.get("Karta_raqami", "")]]},      # H - Karta
                 {'range': f'I{next_row}', 'values': [[order_data.get("To'lov_summasi", "")]]},    # I - Summa
+                # Columns J and beyond are left empty intentionally
             ]
             
+            # Execute batch update
             worksheet.batch_update(updates)
             
             logger.info(f"✅ Successfully added order to {worksheet_name} at row {next_row}")
