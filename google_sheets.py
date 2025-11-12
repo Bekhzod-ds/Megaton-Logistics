@@ -124,10 +124,10 @@ class GoogleSheetsHelper:
             # Extract KOD values from column D (4th column, index 3)
             kods = []
             for row in data[1:]:  # Skip header row (assuming row 1 is header)
-                if len(row) > 14:  # Check if row has at least 15 columns
-                    kod = row[3] if len(row) > 3 else ""  # KOD column
-                    transport = row[13] if len(row) > 13 else ""  # Transport column
-                    phone = row[14] if len(row) > 14 else ""  # Phone column
+                if len(row) > 15:  # Check if row has at least 15 columns
+                    kod = row[4] if len(row) > 4 else ""  # KOD column
+                    transport = row[14] if len(row) > 14 else ""  # Transport column
+                    phone = row[15] if len(row) > 15 else ""  # Phone column
                     
                     # Skip empty KODs
                     if not kod.strip():
@@ -444,15 +444,15 @@ class GoogleSheetsHelper:
             data = worksheet.get_all_values()
             
             for i, row in enumerate(data):
-                if len(row) > 3 and row[3] == kod:
+                if len(row) > 4 and row[4] == kod:
                     # Check for date mismatch
                     if len(row) > 1 and row[1] != sheet2_date:
                         return False, f"⚠️ KOD {kod} {row[1]} sanasida joylashtirilgan, {sheet2_date} emas"
                     
                     # Update the cells
-                    worksheet.update_cell(i+1, 14, transport)
-                    worksheet.update_cell(i+1, 15, phone)
-                    worksheet.update_cell(i+1, 8, "MBK")
+                    worksheet.update_cell(i+1, 15, transport)
+                    worksheet.update_cell(i+1, 16, phone)
+                    worksheet.update_cell(i+1, 9, "MBK")
                     
                     return True, f"✅ {kod} uchun transport ma'lumotlari yangilandi"
             
